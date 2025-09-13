@@ -22,5 +22,19 @@ It provides REST API endpoints for department data like theses, publications, et
 
 ### 1️⃣ Clone the repo
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/Itzklp/cp-department-website.git
 cd cp-department-website
+
+### 2️⃣ Install dependencies
+```bash
+npm install
+
+### 3️⃣ Configure environment variables
+```bash
+Open .env and set your values like 
+PORT=8080
+MONGO_URI=your-mongodb-uri-here
+
+### 4️⃣ Run the project
+```bash
+npm run server
