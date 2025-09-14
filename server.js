@@ -21,6 +21,11 @@ app.use(express.json());
 app.use(morgan("dev"));
 
 app.use('/api/v1/test', require('./routes/testRoute'));
+// Faculty Route
+app.use('/api/v1/faculty', require('./routes/facultyRoute'));
+
+// Project Route
+app.use('/api/v1/project', require('./routes/projectsRoute'));
 
 // Test Route
 app.get("/", (req, res) => {
