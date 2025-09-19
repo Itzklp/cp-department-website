@@ -27,6 +27,33 @@ app.use('/api/v1/faculty', require('./routes/facultyRoute'));
 // Project Route
 app.use('/api/v1/project', require('./routes/projectsRoute'));
 
+// Publication Route
+app.use('/api/v1/publication', require('./routes/publicationRoute'));
+
+//Conference Route
+app.use('/api/v1/conference', require('./routes/conferenceRoute'));
+
+//Published Book Route
+app.use('/api/v1/publishedBook', require('./routes/publishedBooksRoute'));
+
+//Department Events Route
+app.use('/api/v1/departmentEvent', require('./routes/departmentEventsRoute'));
+
+//Invited Talk Route
+app.use("/api/v1/invitedTalk", require("./routes/invitedTalkRoute")); 
+
+//Department Talk Route
+app.use("/api/v1/departmentTalk", require("./routes/departmentTalkRoute"));
+
+//Faculty Award Route
+app.use("/api/v1/facultyAward", require("./routes/facultyAwardRoute")); 
+
+//Patents Route
+app.use("/api/v1/patent", require("./routes/patentRoute"));
+
+//PhD Thesis Route
+app.use("/api/v1/phdThesis", require("./routes/phdThesisRoute"));
+
 // Test Route
 app.get("/", (req, res) => {
   return res.status(200).send("Hello, World! From Kalp");

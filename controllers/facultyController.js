@@ -4,7 +4,16 @@ const facultyModels = require("../models/facultyModels");
 // Add Faculty
 const addFaculty = async (req, res) => {
   try {
-    const { firstName, lastName, email, department, researchArea, teaches, joiningDate } = req.body;
+    const { 
+      firstName, 
+      lastName, 
+      email, 
+      department, 
+      researchArea, 
+      teaches, 
+      joiningDate,
+      designation
+    } = req.body;
 
     // Validate required fields
     if (!firstName || !lastName || !email || !department) {
@@ -23,12 +32,13 @@ const addFaculty = async (req, res) => {
       });
     }
 
-    // Ensure researchArea & teaches are arrays (convert if string)
+    // Create faculty entry
     const faculty = await facultyModels.create({
       firstName,
       lastName,
       email,
       department,
+      designation: designation || "Prof.", // fallback to default
       researchArea: Array.isArray(researchArea) ? researchArea : (researchArea ? [researchArea] : []),
       teaches: Array.isArray(teaches) ? teaches : (teaches ? [teaches] : []),
       joiningDate: joiningDate || Date.now(),
@@ -43,7 +53,7 @@ const addFaculty = async (req, res) => {
     return res.status(500).send({
       success: false,
       message: "Error in facultyController",
-      error: error.message.red.bold,
+      error: error.message,
     });
   }
 };

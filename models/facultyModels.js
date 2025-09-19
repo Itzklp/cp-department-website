@@ -34,6 +34,11 @@ const facultySchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
+  designation: {
+    type: String,
+    default: "Prof.",   // <-- added this
+    trim: true,
+  },
 });
 
 module.exports = mongoose.model("Faculty", facultySchema);
