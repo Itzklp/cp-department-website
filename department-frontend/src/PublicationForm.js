@@ -1,68 +1,86 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import Select from "react-select"; // <-- Import react-select
 
 export default function PublicationForm() {
   const [form, setForm] = useState({
     title: "",
-    authors: "",
+    authors: [], // <-- Authors will now be an array of selected options
     year: "",
     journal: "",
   });
 
+  // New state to hold the list of all faculty members for the dropdown
+  const [facultyOptions, setFacultyOptions] = useState([]);
+  const [isLoading, setIsLoading] = useState(true); // To handle loading state
+
+  // useEffect hook to fetch all faculty when the component loads
+  useEffect(() => {
+    const fetchFaculty = async () => {
+      try {
+        setIsLoading(true);
+        const res = await fetch("http://localhost:8080/api/v1/faculty");
+        const data = await res.json();
+
+        if (data.success) {
+          // Format the fetched data for react-select: { value: 'someId', label: 'Some Name' }
+          const options = data.faculties.map((faculty) => ({
+            value: faculty._id,
+            label: `${faculty.firstName} ${faculty.lastName}`,
+          }));
+          setFacultyOptions(options);
+        }
+      } catch (err) {
+        console.error("Failed to fetch faculty:", err);
+        alert("Could not load faculty list. Please try again later.");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchFaculty();
+  }, []); // The empty dependency array [] means this runs once on mount
+
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
+  };
+  
+  // Special handler for the react-select component
+  const handleAuthorChange = (selectedOptions) => {
+    setForm({ ...form, authors: selectedOptions });
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
 
+    // Check if any author is selected
+    if (form.authors.length === 0) {
+      alert("Please select at least one author.");
+      return;
+    }
+
+    // Extract just the IDs from the selected author objects
+    const authorIds = form.authors.map(author => author.value);
+
     try {
-      // Split authors input (comma separated)
-      const authorNames = form.authors.split(",").map((a) => a.trim());
-
-      const authorIds = [];
-      for (const fullName of authorNames) {
-        // Support middle names: take last word as lastName, rest as firstName
-        const parts = fullName.split(" ");
-        const lastName = parts.pop();
-        const firstName = parts.join(" ");
-
-        const res = await fetch(
-          `http://localhost:8080/api/v1/faculty/id/by-name?firstName=${encodeURIComponent(
-            firstName
-          )}&lastName=${encodeURIComponent(lastName)}`
-        );
-
-        if (!res.ok) {
-          throw new Error(`Author lookup failed for ${fullName}`);
-        }
-
-        const data = await res.json();
-        if (data?.success && data.facultyId) {
-          authorIds.push(data.facultyId);
-        } else {
-          throw new Error(`No ID found for ${fullName}`);
-        }
-      }
-
-      // Submit publication with faculty IDs
       const pubRes = await fetch("http://localhost:8080/api/v1/publication", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...form,
-          authors: authorIds,
+          authors: authorIds, // <-- Send the array of IDs
         }),
       });
 
       if (pubRes.ok) {
         alert("Publication added successfully!");
-        setForm({ title: "", authors: "", year: "", journal: "" });
+        setForm({ title: "", authors: [], year: "", journal: "" });
       } else {
-        alert("Error adding publication");
+        const errorData = await pubRes.json();
+        alert(`Error: ${errorData.message || 'Failed to add publication'}`);
       }
     } catch (err) {
       console.error(err);
-      alert(err.message);
+      alert("A network error occurred.");
     }
   };
 
@@ -83,15 +101,20 @@ export default function PublicationForm() {
         required
       />
 
-      <input
-        type="text"
+      {/* --- This is the new Dropdown --- */}
+      <Select
+        isMulti // Allows selecting multiple authors
         name="authors"
-        placeholder="Authors (comma separated: e.g. John Doe, Jane Smith)"
+        options={facultyOptions}
+        className="w-full mb-3"
+        classNamePrefix="select"
+        placeholder="Select Authors..."
+        onChange={handleAuthorChange}
         value={form.authors}
-        onChange={handleChange}
-        className="w-full mb-3 p-2 border rounded"
+        isLoading={isLoading}
         required
       />
+      {/* --- End of new Dropdown --- */}
 
       <input
         type="number"
