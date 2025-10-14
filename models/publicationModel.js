@@ -5,12 +5,19 @@ const publicationSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  // Department faculty authors (references)
   authors: [
     {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Faculty", // reference to Faculty collection
-      required: true,
-    }
+    },
+  ],
+  // External authors (not in our department)
+  otherAuthors: [
+    {
+      type: String, // store names directly
+      trim: true,
+    },
   ],
   year: {
     type: Number,

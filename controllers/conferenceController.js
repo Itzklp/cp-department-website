@@ -61,8 +61,6 @@ exports.deleteConference = async (req, res) => {
 };
 
 
-// New Added
-
 exports.uploadFile = async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ message: "No file uploaded" });
@@ -73,21 +71,30 @@ exports.uploadFile = async (req, res) => {
     const sheet = workbook.Sheets[sheetName];
 
     // Convert sheet to JSON
-    const data = XLSX.utils.sheet_to_json(sheet);
+    const data = XLSX.utils.sheet_to_json(sheet, { defval: "" });
 
-    // Optional: transform authors if comma-separated
+    if (data.length === 0) {
+      return res.status(400).json({ message: "Excel sheet is empty" });
+    }
+
+    // Transform authors if comma-separated
     const formattedData = data.map(row => ({
-      ...row,
-      authors: row.authors.split(",").map(a => a.trim()),
+      type: row.type,
+      authors: row.authors ? row.authors.split(",").map(a => a.trim()) : [],
+      title: row.title,
+      conferenceName: row.conferenceName,
+      pages: row.pages || "",
+      publisher: row.publisher || "",
+      location: row.location || "",
+      date: row.date || "",
     }));
 
     // Insert into MongoDB
     const result = await Conference.insertMany(formattedData);
-    res.json({ message: `Imported ${result.length} conferences` });
+
+    res.json({ message: `Successfully imported ${result.length} conferences.` });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Error importing file", error: err.message });
   }
 };
-
-

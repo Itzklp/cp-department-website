@@ -1,6 +1,9 @@
 const Publication = require("../models/publicationModel");
+const Faculty = require("../models/facultyModels");
+const XLSX = require("xlsx");
+const path = require("path");
+const fs = require("fs");
 
-// Add new publication
 const addPublication = async (req, res) => {
   try {
     const { title, authors, year, journal, volume, issue, pages, doi } = req.body;
@@ -9,9 +12,32 @@ const addPublication = async (req, res) => {
       return res.status(400).json({ error: "Title, authors, year, and journal are required." });
     }
 
+    const facultyAuthors = [];
+    const otherAuthors = [];
+
+    for (const name of authors) {
+      const faculty = await Faculty.findOne({
+        $or: [
+          { fullName: { $regex: new RegExp(`^${name}$`, "i") } },
+          {
+            $expr: {
+              $regexMatch: {
+                input: { $concat: ["$firstName", " ", "$lastName"] },
+                regex: new RegExp(`^${name}$`, "i"),
+              },
+            },
+          },
+        ],
+      });
+
+      if (faculty) facultyAuthors.push(faculty._id);
+      else otherAuthors.push(name);
+    }
+
     const newPublication = new Publication({
       title,
-      authors,
+      authors: facultyAuthors,
+      otherAuthors,
       year,
       journal,
       volume,
@@ -21,21 +47,20 @@ const addPublication = async (req, res) => {
     });
 
     await newPublication.save();
-    res.status(201).json(newPublication);
+    const populated = await newPublication.populate("authors", "firstName lastName email designation");
+
+    res.status(201).json(populated);
   } catch (err) {
+    console.error("Error adding publication:", err);
     res.status(500).json({ error: err.message });
   }
 };
 
-// Get all publications (optional filter by professorId via query param)
 const getPublications = async (req, res) => {
   try {
     const { professorId } = req.query;
-
     let filter = {};
-    if (professorId) {
-      filter = { authors: professorId };
-    }
+    if (professorId) filter = { authors: professorId };
 
     const publications = await Publication.find(filter)
       .populate("authors", "firstName lastName email designation");
@@ -46,7 +71,6 @@ const getPublications = async (req, res) => {
   }
 };
 
-// Get publications by professor (route param)
 const getPublicationsByProfessor = async (req, res) => {
   try {
     const { professorId } = req.params;
@@ -60,7 +84,6 @@ const getPublicationsByProfessor = async (req, res) => {
   }
 };
 
-// Search publications by title
 const searchPublicationsByTitle = async (req, res) => {
   try {
     const { title } = req.query;
@@ -70,7 +93,7 @@ const searchPublicationsByTitle = async (req, res) => {
     }
 
     const publications = await Publication.find({
-      title: { $regex: title, $options: "i" }, // case-insensitive search
+      title: { $regex: title, $options: "i" },
     }).populate("authors", "firstName lastName email designation");
 
     res.json(publications);
@@ -79,7 +102,6 @@ const searchPublicationsByTitle = async (req, res) => {
   }
 };
 
-// Update publication
 const updatePublication = async (req, res) => {
   try {
     const { id } = req.params;
@@ -98,7 +120,6 @@ const updatePublication = async (req, res) => {
   }
 };
 
-// Delete publication
 const deletePublication = async (req, res) => {
   try {
     const { id } = req.params;
@@ -114,6 +135,86 @@ const deletePublication = async (req, res) => {
   }
 };
 
+const bulkUploadPublications = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
+
+    const filePath = path.join(__dirname, "..", req.file.path);
+    const workbook = XLSX.readFile(filePath);
+    const sheetName = workbook.SheetNames[0];
+    const sheetData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+
+    const inserted = [];
+
+    for (const row of sheetData) {
+      const title = row["Title"]?.trim();
+      const authorsStr = row["Authors"]?.trim();
+      const year = parseInt(row["Year"]);
+      const journal = row["Journal"]?.trim();
+      const volume = row["Volume"] || "";
+      const issue = row["Issue"] || "";
+      const pages = row["Pages"] || "";
+      const doi = row["DOI"] || "";
+
+      if (!title || !authorsStr || !year || !journal) continue;
+
+      const authorNames = authorsStr
+        .split(/,|&|and/gi)
+        .map((a) => a.trim())
+        .filter((a) => a.length > 0);
+
+      const facultyAuthors = [];
+      const otherAuthors = [];
+
+      for (const name of authorNames) {
+        const faculty = await Faculty.findOne({
+          $or: [
+            { fullName: { $regex: new RegExp(`^${name}$`, "i") } },
+            {
+              $expr: {
+                $regexMatch: {
+                  input: { $concat: ["$firstName", " ", "$lastName"] },
+                  regex: new RegExp(`^${name}$`, "i"),
+                },
+              },
+            },
+          ],
+        });
+
+        if (faculty) facultyAuthors.push(faculty._id);
+        else otherAuthors.push(name);
+      }
+
+      const pub = new Publication({
+        title,
+        authors: facultyAuthors,
+        otherAuthors,
+        year,
+        journal,
+        volume,
+        issue,
+        pages,
+        doi,
+      });
+
+      await pub.save();
+      inserted.push(pub);
+    }
+
+    fs.unlinkSync(filePath);
+
+    res.status(201).json({
+      message: `${inserted.length} publications uploaded successfully`,
+      publications: inserted,
+    });
+  } catch (err) {
+    console.error("Bulk upload error:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
 module.exports = {
   addPublication,
   getPublications,
@@ -121,4 +222,5 @@ module.exports = {
   searchPublicationsByTitle,
   updatePublication,
   deletePublication,
+  bulkUploadPublications, 
 };

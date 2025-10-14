@@ -1,4 +1,7 @@
 const PhDThesis = require("../models/phdThesisModel");
+const XLSX = require("xlsx");
+const fs = require("fs");
+const path = require("path");
 
 // CREATE
 exports.createThesis = async (req, res) => {
@@ -55,5 +58,52 @@ exports.deleteThesis = async (req, res) => {
     res.json({ message: "Thesis deleted successfully" });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+};
+
+// EXPORT TO EXCEL
+exports.bulkUploadTheses = async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+
+    const filePath = path.join(__dirname, "..", req.file.path);
+    const workbook = XLSX.readFile(filePath);
+    const sheetName = workbook.SheetNames[0];
+    const sheetData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+
+    const inserted = [];
+
+    for (const row of sheetData) {
+      const name = row["Name"]?.trim();
+      const studentId = row["StudentId"]?.trim();
+      const topic = row["Topic"]?.trim();
+      const supervisor = row["Supervisor"]?.trim();
+      const coSupervisor = row["CoSupervisor"]?.trim() || "";
+      const yearAwarded = row["YearAwarded"] ? parseInt(row["YearAwarded"]) : 2024;
+
+      if (!name || !studentId || !topic || !supervisor) continue; // skip invalid rows
+
+      const thesis = new PhDThesis({
+        name,
+        studentId,
+        topic,
+        supervisor,
+        coSupervisor,
+        yearAwarded,
+      });
+
+      await thesis.save();
+      inserted.push(thesis);
+    }
+
+    fs.unlinkSync(filePath); // delete uploaded file
+
+    res.status(201).json({
+      message: `${inserted.length} theses uploaded successfully`,
+      theses: inserted,
+    });
+  } catch (error) {
+    console.error("Bulk upload error:", error);
+    res.status(500).json({ error: error.message });
   }
 };

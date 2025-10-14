@@ -1,4 +1,7 @@
 const FacultyAward = require("../models/facultyAwardModel");
+const XLSX = require("xlsx");
+const fs = require("fs");
+const path = require("path");
 
 // CREATE
 exports.createAward = async (req, res) => {
@@ -55,5 +58,52 @@ exports.deleteAward = async (req, res) => {
     res.json({ message: "Award deleted successfully" });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+};
+
+// BULK DATA UPLOAD
+exports.bulkUploadAwards = async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+
+    const filePath = path.join(__dirname, "..", req.file.path);
+    const workbook = XLSX.readFile(filePath);
+    const sheetName = workbook.SheetNames[0];
+    const sheetData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+
+    const inserted = [];
+
+    for (const row of sheetData) {
+      const facultyName = row["Faculty Name"]?.trim();
+      const title = row["Title"]?.trim();
+      const organization = row["Organization"]?.trim();
+      const journalInfo = row["Journal Info"]?.trim() || "";
+      const year = row["Year"] || new Date().getFullYear();
+      const category = row["Category"]?.trim() || "Faculty";
+
+      if (!facultyName || !title || !organization) continue; // skip invalid rows
+
+      const award = new FacultyAward({
+        facultyName,
+        title,
+        organization,
+        journalInfo,
+        year,
+        category,
+      });
+
+      await award.save();
+      inserted.push(award);
+    }
+
+    fs.unlinkSync(filePath); // remove uploaded file
+
+    res.status(201).json({
+      message: `${inserted.length} faculty awards uploaded successfully`,
+      awards: inserted,
+    });
+  } catch (error) {
+    console.error("Bulk upload error:", error);
+    res.status(500).json({ error: error.message });
   }
 };

@@ -15,7 +15,7 @@ router.get("/:id", conferenceController.getConferenceById);
 router.put("/:id", conferenceController.updateConference);
 router.delete("/:id", conferenceController.deleteConference);
 
-// New Added
+// Bulk Upload from Excel
 router.post("/upload",upload.single('file'),conferenceController.uploadFile)
 
 module.exports = router;

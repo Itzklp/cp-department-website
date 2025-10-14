@@ -1,4 +1,7 @@
 const PublishedBook = require("../models/publishedBooksModel");
+const XLSX = require("xlsx");
+const path = require("path");
+const fs = require("fs");
 
 // Add new published book / chapter
 const addPublishedBook = async (req, res) => {
@@ -75,6 +78,58 @@ const deletePublishedBook = async (req, res) => {
   }
 };
 
+// Bulk upload from Excel file (for initial data population)
+const bulkUploadPublishedBooks = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: "No file uploaded" });
+    }
+
+    const filePath = path.join(__dirname, "..", req.file.path);
+    const workbook = XLSX.readFile(filePath);
+    const sheetName = workbook.SheetNames[0];
+    const sheetData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+
+    const inserted = [];
+
+    for (const row of sheetData) {
+      // Read values from Excel row
+      const title = row["Title"]?.trim();
+      const author = row["Author"]?.trim();
+      const type = row["Type"]?.trim();
+      const publisher = row["Publisher"]?.trim();
+      const series = row["Series"]?.trim() || "";
+      const year = parseInt(row["Year"]);
+      const link = row["Link"]?.trim() || "";
+
+      if (!title || !author || !type || !publisher || !year) continue; // skip invalid rows
+
+      const book = new PublishedBook({
+        title,
+        author,
+        type,
+        publisher,
+        series,
+        year,
+        link,
+      });
+
+      await book.save();
+      inserted.push(book);
+    }
+
+    fs.unlinkSync(filePath); // remove uploaded file
+
+    res.status(201).json({
+      message: `${inserted.length} books uploaded successfully`,
+      books: inserted,
+    });
+  } catch (error) {
+    console.error("Bulk upload error:", error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   addPublishedBook,
   getPublishedBooks,
@@ -82,4 +137,5 @@ module.exports = {
   searchPublishedBooksByTitle,
   updatePublishedBook,
   deletePublishedBook,
+  bulkUploadPublishedBooks,
 };

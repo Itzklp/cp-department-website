@@ -6,11 +6,15 @@ const {
     getFacultyIdByName, 
     getFacultyNameById,
     updateFaculty,
-    deleteFaculty 
+    deleteFaculty,
+    bulkUploadFaculty
 } = require('../controllers/facultyController');
 const { get } = require('mongoose');
 
 const router = express.Router();
+const multer = require('multer');
+const storage = multer.memoryStorage();
+const upload = multer({ storage });
 
 //For Registering a faculty
 router.post('/', addFaculty);
@@ -32,5 +36,8 @@ router.put("/:id", updateFaculty);
 
 // Delete faculty by ID
 router.delete("/:id", deleteFaculty);
+
+// Bulk upload faculty via Excel file
+router.post("/bulk-upload", upload.single("file"), bulkUploadFaculty);
 
 module.exports = router;

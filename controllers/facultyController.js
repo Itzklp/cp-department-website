@@ -1,5 +1,6 @@
 const colors = require("colors");
 const facultyModels = require("../models/facultyModels");
+const XLSX = require("xlsx");
 
 // Add Faculty
 const addFaculty = async (req, res) => {
@@ -252,6 +253,55 @@ const deleteFaculty = async (req, res) => {
   }
 };
 
+// BULK UPLOAD FROM XLSX
+const bulkUploadFaculty = async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ success: false, message: "No file uploaded" });
+
+    // Read Excel file from buffer
+    const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+    const sheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+
+    // Convert sheet to JSON
+    const data = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+
+    if (!data || data.length === 0) {
+      return res.status(400).json({ success: false, message: "Excel sheet is empty" });
+    }
+
+    // Transform each row
+    const formattedData = data.map(row => ({
+      firstName: row.firstName || row.FirstName || "",
+      lastName: row.lastName || row.LastName || "",
+      email: row.email || row.Email || "",
+      department: row.department || row.Department || "",
+      designation: row.designation || "Prof.",
+      researchArea: row.researchArea ? row.researchArea.split(",").map(a => a.trim()) : [],
+      teaches: row.teaches ? row.teaches.split(",").map(a => a.trim()) : [],
+      joiningDate: row.joiningDate ? new Date(row.joiningDate) : Date.now(),
+    }));
+
+    // Validate required fields and remove invalid rows
+    const validData = formattedData.filter(f => f.firstName && f.lastName && f.email && f.department);
+
+    if (validData.length === 0) {
+      return res.status(400).json({ success: false, message: "No valid rows to insert" });
+    }
+
+    // Insert into DB
+    const result = await Faculty.insertMany(validData, { ordered: false }); // continue on duplicate errors
+
+    res.status(201).json({
+      success: true,
+      message: `Successfully imported ${result.length} faculty records`,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: "Error importing file", error: err.message });
+  }
+};
+
 
 module.exports = { 
   addFaculty, 
@@ -260,5 +310,6 @@ module.exports = {
   getFacultyIdByName, 
   getFacultyNameById,
   updateFaculty,
-  deleteFaculty 
+  deleteFaculty,
+  bulkUploadFaculty
 };

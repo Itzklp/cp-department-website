@@ -1,4 +1,8 @@
 const Patent = require("../models/patentModel");
+const XLSX = require("xlsx");
+const fs = require("fs");
+const path = require("path"); 
+
 
 // CREATE
 exports.createPatent = async (req, res) => {
@@ -55,5 +59,59 @@ exports.deletePatent = async (req, res) => {
     res.json({ message: "Patent deleted successfully" });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+};
+
+// EXPORT USING XLSX
+exports.bulkUploadPatents = async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+
+    const filePath = path.join(__dirname, "..", req.file.path);
+    const workbook = XLSX.readFile(filePath);
+    const sheetName = workbook.SheetNames[0];
+    const sheetData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+
+    const inserted = [];
+
+    for (const row of sheetData) {
+      const authorsRaw = row["Authors"]?.trim();
+      const title = row["Title"]?.trim();
+      const applicationNumber = row["Application Number"]?.trim();
+      const filingDate = row["Filing Date"]?.trim();
+      const country = row["Country"]?.trim() || "India";
+      const status = row["Status"]?.trim() || "Filed";
+
+      if (!authorsRaw || !title || !applicationNumber || !filingDate) continue; // skip invalid rows
+
+      // Split authors by comma or & symbol
+      let authors = authorsRaw
+        .replace(/&/g, ",") // replace & with comma
+        .split(",")
+        .map(a => a.trim())
+        .filter(a => a.length > 0);
+
+      const patent = new Patent({
+        authors,
+        title,
+        applicationNumber,
+        filingDate,
+        country,
+        status,
+      });
+
+      await patent.save();
+      inserted.push(patent);
+    }
+
+    fs.unlinkSync(filePath); // remove uploaded file
+
+    res.status(201).json({
+      message: `${inserted.length} patents uploaded successfully`,
+      patents: inserted,
+    });
+  } catch (error) {
+    console.error("Bulk upload error:", error);
+    res.status(500).json({ error: error.message });
   }
 };
