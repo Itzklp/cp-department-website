@@ -85,7 +85,7 @@ const bulkUploadPublishedBooks = async (req, res) => {
       return res.status(400).json({ message: "No file uploaded" });
     }
 
-    const filePath = path.join(__dirname, "..", req.file.path);
+    const filePath = path.resolve(req.file.path);
     const workbook = XLSX.readFile(filePath);
     const sheetName = workbook.SheetNames[0];
     const sheetData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);

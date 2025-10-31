@@ -2,6 +2,8 @@ const Project = require("../models/projectsModel");
 const XLSX = require("xlsx");
 const path = require("path");
 const fs = require("fs");
+const Faculty = require("../models/facultyModels");
+
 
 // Create a new project
 const createProject = async (req, res) => {
@@ -131,20 +133,21 @@ const getProjectsByFacultyId = async (req, res) => {
   }
 };
 
-//Bulk upload projects from Excel file
+// Bulk upload projects from Excel file
 const bulkUploadProjects = async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ success: false, message: "No file uploaded" });
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: "No file uploaded" });
+    }
 
-    const filePath = path.join(__dirname, "..", req.file.path);
-    const workbook = XLSX.readFile(filePath);
+    // ✅ FIX: Use req.file.path directly (no path.join)
+    const workbook = XLSX.readFile(req.file.path);
     const sheetName = workbook.SheetNames[0];
     const sheetData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
 
     const inserted = [];
 
     for (const row of sheetData) {
-      // Extract data from Excel row
       const projectTitle = row["Project Title"]?.trim();
       const piName = row["PI"]?.trim();
       const coPiName = row["Co-PI"]?.trim();
@@ -153,30 +156,57 @@ const bulkUploadProjects = async (req, res) => {
       const dateSanctioned = row["Date Sanctioned"] ? new Date(row["Date Sanctioned"]) : null;
       const dateCompletion = row["Date Completion"] ? new Date(row["Date Completion"]) : null;
       const status = row["Status"]?.trim();
-      const notableAchievements = row["Notable Achievements"] ? row["Notable Achievements"].split(";").map(a => a.trim()) : [];
+      const notableAchievements = row["Notable Achievements"]
+        ? row["Notable Achievements"].split(";").map(a => a.trim())
+        : [];
       const sanctionLetterLink = row["Sanction Letter Link"]?.trim() || "";
       const totalINR = row["Total INR"] ? Number(row["Total INR"]) : null;
       const type = row["Type"]?.trim(); // National / International
       const category = row["Category"]?.trim(); // Government / Industry
 
-      if (!projectTitle || !piName || !fundingAgency || !dateSanctioned || !dateCompletion || !status || !totalINR || !type || !category) {
-        continue; // skip invalid row
+      // Skip invalid rows
+      if (
+        !projectTitle ||
+        !piName ||
+        !fundingAgency ||
+        !dateSanctioned ||
+        !dateCompletion ||
+        !status ||
+        !totalINR ||
+        !type ||
+        !category
+      ) {
+        continue;
       }
 
-      // Lookup PI and Co-PI in Faculty collection
+      // ✅ Lookup PI and Co-PI in Faculty collection
       const projectPI = await Faculty.findOne({
         $or: [
           { fullName: { $regex: new RegExp(`^${piName}$`, "i") } },
-          { $expr: { $regexMatch: { input: { $concat: ["$firstName"," ","$lastName"] }, regex: new RegExp(`^${piName}$`, "i") } } }
-        ]
+          {
+            $expr: {
+              $regexMatch: {
+                input: { $concat: ["$firstName", " ", "$lastName"] },
+                regex: new RegExp(`^${piName}$`, "i"),
+              },
+            },
+          },
+        ],
       });
 
       const projectCoPI = coPiName
         ? await Faculty.findOne({
             $or: [
               { fullName: { $regex: new RegExp(`^${coPiName}$`, "i") } },
-              { $expr: { $regexMatch: { input: { $concat: ["$firstName"," ","$lastName"] }, regex: new RegExp(`^${coPiName}$`, "i") } } }
-            ]
+              {
+                $expr: {
+                  $regexMatch: {
+                    input: { $concat: ["$firstName", " ", "$lastName"] },
+                    regex: new RegExp(`^${coPiName}$`, "i"),
+                  },
+                },
+              },
+            ],
           })
         : null;
 
@@ -200,18 +230,19 @@ const bulkUploadProjects = async (req, res) => {
       inserted.push(project);
     }
 
-    fs.unlinkSync(filePath);
+    // ✅ Clean up temp file after upload
+    fs.unlinkSync(req.file.path);
 
     res.status(201).json({
       success: true,
       message: `${inserted.length} projects uploaded successfully`,
       projects: inserted,
     });
-
   } catch (error) {
     console.error("Bulk upload error:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
 
 module.exports = { createProject, getAllProjects, updateProject, deleteProject, getProjectsByFacultyId, bulkUploadProjects };
