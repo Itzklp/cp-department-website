@@ -7,16 +7,21 @@ const {
   getProjectsByFacultyId,
   bulkUploadProjects
 } = require("../controllers/projectsController");
+const { protect, authorize } = require("../middleware/authMiddleware"); // Import middleware
 
 const router = express.Router();
 const fs = require("fs");
 const path = require("path");
 const multer = require("multer");
 
+// Apply 'protect' to ALL routes in this file
+// This ensures that req.user is always available in the controller
+router.use(protect);
+
 // Create project
 router.post("/add", createProject);
 
-// Get all projects
+// Get all projects (Controller filters this based on user role)
 router.get("/", getAllProjects);
 
 // Update project by ID
@@ -29,6 +34,7 @@ router.delete("/:id", deleteProject);
 router.get("/faculty/:facultyId", getProjectsByFacultyId);
 
 // Bulk upload projects via CSV
+// RESTRICTED: Only Admins can perform bulk uploads
 const uploadDir = path.join(__dirname, "../uploads");
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
@@ -51,6 +57,6 @@ const upload = multer({
   },
 });
 
-router.post("/bulk", upload.single("file"), bulkUploadProjects);
+router.post("/bulk", authorize("admin"), upload.single("file"), bulkUploadProjects);
 
 module.exports = router;
