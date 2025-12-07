@@ -11,6 +11,7 @@ const colors = require("colors");
 const cors = require("cors");
 const morgan = require("morgan");
 const { connect } = require("mongoose");
+const authRoute = require('./routes/authRoute');
 
 
 // App init
@@ -19,9 +20,14 @@ const app = express();
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use(morgan("dev"));
 
 app.use('/api/v1/test', require('./routes/testRoute'));
+
+// Auth Route
+app.use('/api/v1/auth', require('./routes/authRoute') );
+
 // Faculty Route
 app.use('/api/v1/faculty', require('./routes/facultyRoute'));
 

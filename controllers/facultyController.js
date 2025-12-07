@@ -1,6 +1,8 @@
 const colors = require("colors");
 const facultyModels = require("../models/facultyModels");
 const XLSX = require("xlsx");
+const sendEmail = require("../utils/sendEmail");
+const User = require("../models/userModel");
 
 // Add Faculty
 const addFaculty = async (req, res) => {
@@ -18,44 +20,57 @@ const addFaculty = async (req, res) => {
 
     // Validate required fields
     if (!firstName || !lastName || !email || !department) {
-      return res.status(400).send({
-        success: false,
-        message: "Please provide firstName, lastName, email, and department",
-      });
+      return res.status(400).send({ success: false, message: "Missing fields" });
     }
 
-    // Check if faculty already exists
     const existingFaculty = await facultyModels.findOne({ email });
     if (existingFaculty) {
-      return res.status(400).send({
-        success: false,
-        message: "Faculty already exists",
-      });
+      return res.status(400).send({ success: false, message: "Faculty already exists" });
     }
 
-    // Create faculty entry
     const faculty = await facultyModels.create({
-      firstName,
-      lastName,
-      email,
-      department,
-      designation: designation || "Prof.", // fallback to default
-      researchArea: Array.isArray(researchArea) ? researchArea : (researchArea ? [researchArea] : []),
-      teaches: Array.isArray(teaches) ? teaches : (teaches ? [teaches] : []),
-      joiningDate: joiningDate || Date.now(),
+      firstName, lastName, email, department, designation,
+      researchArea, teaches, joiningDate
     });
+
+    // 2. AUTOMATIC USER CREATION (New Logic)
+    // Check if user account already exists
+    const existingUser = await User.findOne({ email });
+    
+    if (!existingUser) {
+        // Create User with default password
+        const generatedPassword = "12345678"; 
+        
+        await User.create({
+            name: `${firstName} ${lastName}`,
+            email: email,
+            password: generatedPassword, // Will be hashed by pre-save hook
+            role: "faculty",
+            facultyProfile: faculty._id,
+            isFirstLogin: true
+        });
+
+        // 3. Send Email Notification
+        try {
+            await sendEmail({
+                email: email,
+                subject: "Account Created - Department Website",
+                message: `Hello ${firstName},\n\nYour faculty account has been created.\n\nLogin Credentials:\nUsername: ${email}\nPassword: ${generatedPassword}\n\nPlease login and change your password immediately.`
+            });
+        } catch (emailError) {
+            console.error("Could not send email", emailError);
+            // Don't fail the request if email fails, but log it
+        }
+    }
 
     res.status(201).send({
       success: true,
-      message: "Faculty registered successfully",
+      message: "Faculty and User Account registered successfully",
       faculty,
     });
+
   } catch (error) {
-    return res.status(500).send({
-      success: false,
-      message: "Error in facultyController",
-      error: error.message,
-    });
+    return res.status(500).send({ success: false, error: error.message });
   }
 };
 
