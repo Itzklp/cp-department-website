@@ -317,7 +317,59 @@ const bulkUploadFaculty = async (req, res) => {
   }
 };
 
+const Publication = require("../models/publicationModel");
+const Conference = require("../models/conferenceModel");
 
+const getFacultyDashboardData = async (req, res) => {
+  try {
+
+    const facultyId = req.user._id;
+    const facultyName = req.user.name;
+
+    const [publications, conferences] = await Promise.all([
+      Publication.find({ authors: facultyId }).sort({ year: -1 }),
+      Conference.find({ authors: facultyName })
+    ]);
+
+    const groupByYear = (items, field) => {
+      return items.reduce((acc, item) => {
+
+        let year = item[field];
+
+        if (field === "date") {
+          year = new Date(item.date).getFullYear();
+        }
+
+        if (!acc[year]) acc[year] = [];
+
+        acc[year].push(item);
+
+        return acc;
+
+      }, {});
+    };
+
+    const dashboardData = {
+      Publications: groupByYear(publications, "year"),
+      Conferences: groupByYear(conferences, "date"),
+    };
+
+    res.status(200).json({
+      success: true,
+      data: dashboardData
+    });
+
+  } catch (error) {
+
+    console.error("Dashboard fetch error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Server Error fetching dashboard"
+    });
+
+  }
+};
 module.exports = { 
   addFaculty, 
   getAllFaculty, 
@@ -326,5 +378,6 @@ module.exports = {
   getFacultyNameById,
   updateFaculty,
   deleteFaculty,
-  bulkUploadFaculty
+  bulkUploadFaculty,
+  getFacultyDashboardData
 };

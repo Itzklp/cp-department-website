@@ -45,7 +45,7 @@
 const express = require('express');
 const { protect, authorize } = require('../middleware/authMiddleware'); // Import
 const { 
-    addFaculty, getAllFaculty, updateFaculty, deleteFaculty 
+    addFaculty, getAllFaculty, updateFaculty, deleteFaculty, getFacultyDashboardData
 } = require('../controllers/facultyController');
 
 const router = express.Router();
@@ -57,5 +57,10 @@ router.get('/', getAllFaculty);
 router.post('/', protect, authorize('admin'), addFaculty);
 router.put('/:id', protect, authorize('admin'), updateFaculty);
 router.delete('/:id', protect, authorize('admin'), deleteFaculty);
+
+// Fetch dashboard data for the logged-in user
+router.get('/my-dashboard', protect, getFacultyDashboardData);
+
+module.exports = router;
 
 module.exports = router;

@@ -61,6 +61,9 @@ app.use("/api/v1/patent", require("./routes/patentRoute"));
 //PhD Thesis Route
 app.use("/api/v1/phdThesis", require("./routes/phdThesisRoute"));
 
+// Dashboard Route (ADD THIS LINE)
+app.use("/api/v1/dashboard", require("./routes/dashboardRoute"));
+
 // Test Route
 app.get("/", (req, res) => {
   return res.status(200).send("Hello, World! From Kalp");
