@@ -1,44 +1,55 @@
 // controllers/dashboardController.js
 const Publication = require('../models/publicationModel');
+const Project = require('../models/projectsModel');
 const Conference = require('../models/conferenceModel');
-// You can import other models here like Project, Patent, etc.
+const PhdThesis = require('../models/phdThesisModel');
+const Patent = require('../models/patentModel');
+const PublishedBook = require('../models/publishedBooksModel');
+const DepartmentEvent = require('../models/departmentEventsModel');
+const InvitedTalk = require('../models/invitedTalkModel');
+const FacultyAward = require('../models/facultyAwardModel');
 
 exports.getFacultyDashboardData = async (req, res) => {
   try {
-    // req.user is populated by your protect middleware
-    const facultyId = req.user.facultyProfile; // Or req.user._id depending on your userModel
-    const facultyName = req.user.name; 
+    // Extract the references based on your auth middleware
+    const facultyId = req.user.facultyProfile; // ObjectId for refs like authors, projectPI
+    const facultyName = req.user.name; // String for schemas that store the literal name
 
-    // 1. Fetch data concurrently
-    const [publications, conferences] = await Promise.all([
-      Publication.find({ authors: facultyId }).sort({ year: -1 }),
-      Conference.find({ authors: facultyName }) // Assuming conferences store string names
+    // Fetch all data concurrently as flat arrays. 
+    // We add .catch(() => []) to ensure that if one table is missing/empty, it doesn't break the whole dashboard.
+    const [
+      publications,
+      projects,
+      conferences,
+      phdThesis,
+      patents,
+      books,
+      events,
+      talks,
+      awards
+    ] = await Promise.all([
+      Publication.find({ authors: facultyId }).sort({ year: -1 }).catch(() => []),
+      Project.find({ $or: [{ projectPI: facultyId }, { projectCoPI: facultyId }] }).sort({ dateSanctioned: -1 }).catch(() => []),
+      Conference.find({ $or: [{ authors: facultyId }, { authors: facultyName }] }).catch(() => []),
+      PhdThesis.find({ $or: [{ supervisor: facultyId }, { supervisor: facultyName }] }).catch(() => []),
+      Patent.find({ $or: [{ inventors: facultyId }, { inventors: facultyName }] }).catch(() => []),
+      PublishedBook.find({ authors: facultyId }).catch(() => []),
+      DepartmentEvent.find({ coordinators: facultyId }).catch(() => []),
+      InvitedTalk.find({ speaker: facultyName }).catch(() => []),
+      FacultyAward.find({ awardee: facultyId }).catch(() => [])
     ]);
 
-    // 2. Helper function to group data by year
-    const groupByYear = (items, yearField) => {
-      return items.reduce((acc, item) => {
-        // Handle variations in year/date fields
-        let itemYear = item[yearField];
-        if (!itemYear) {
-            itemYear = "Unknown Year";
-        } else if (typeof itemYear === 'string' && itemYear.includes('-')) {
-            itemYear = itemYear.split('-')[0]; // Extract year if it's a full date string like YYYY-MM-DD
-        }
-
-        if (!acc[itemYear]) {
-          acc[itemYear] = [];
-        }
-        acc[itemYear].push(item);
-        return acc;
-      }, {});
-    };
-
-    // 3. Format the final response object
+    // Format the response EXACTLY as the new React frontend expects it
     const dashboardData = {
-      Publications: groupByYear(publications, 'year'),
-      Conferences: groupByYear(conferences, 'date'), 
-      // Add others as you go: Projects: groupByYear(projects, 'year'),
+      publications: publications || [],
+      projects: projects || [],
+      conferences: conferences || [],
+      phdThesis: phdThesis || [],
+      patents: patents || [],
+      books: books || [],
+      events: events || [],
+      talks: talks || [],
+      awards: awards || []
     };
 
     res.status(200).json({

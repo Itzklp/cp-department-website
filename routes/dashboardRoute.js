@@ -1,11 +1,10 @@
 // routes/dashboardRoute.js
 const express = require('express');
-const { protect } = require('../middleware/authMiddleware');
-const { getFacultyDashboardData } = require('../controllers/dashboardController');
-
 const router = express.Router();
+const { getFacultyDashboardData } = require('../controllers/dashboardController');
+const { protect } = require('../middleware/authMiddleware');
 
-// Fetch dashboard data for the logged-in user
+// The frontend calls /api/v1/dashboard/my-dashboard
 router.get('/my-dashboard', protect, getFacultyDashboardData);
 
 module.exports = router;
