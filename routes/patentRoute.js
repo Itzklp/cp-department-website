@@ -4,6 +4,8 @@ const multer = require("multer");
 const fs = require("fs");
 const path = require("path");
 const patentController = require("../controllers/patentController");
+const { protect } = require("../middleware/authMiddleware");
+router.use(protect); // This forces all patent routes to require authentication
 
 
 // Bulk data upload 

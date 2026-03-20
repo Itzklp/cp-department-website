@@ -3,6 +3,7 @@ const Faculty = require("../models/facultyModels");
 const XLSX = require("xlsx");
 const path = require("path");
 const fs = require("fs");
+const mongoose = require("mongoose"); // 🔥 Add this line at the top!
 
 const addPublication = async (req, res) => {
   try {
@@ -15,28 +16,36 @@ const addPublication = async (req, res) => {
     const facultyAuthors = [];
     const otherAuthors = [];
 
-    for (const name of authors) {
-      const faculty = await Faculty.findOne({
-        $or: [
-          { fullName: { $regex: new RegExp(`^${name}$`, "i") } },
-          {
-            $expr: {
-              $regexMatch: {
-                input: { $concat: ["$firstName", " ", "$lastName"] },
-                regex: new RegExp(`^${name}$`, "i"),
-              },
-            },
+    for (const item of authors) {
+      // 1. NEW LOGIC: Check if the incoming data is already a valid MongoDB ObjectId (from React UI)
+      if (mongoose.Types.ObjectId.isValid(item)) {
+        const facultyById = await Faculty.findById(item);
+        if (facultyById) {
+          facultyAuthors.push(facultyById._id);
+          continue; // Skip the name matching, we found them!
+        }
+      }
+
+      // 2. OLD LOGIC FALLBACK: If it's just a text string (like an external author or from Bulk Upload)
+      const facultyByName = await Faculty.findOne({
+        $expr: {
+          $regexMatch: {
+            input: { $concat: ["$firstName", " ", "$lastName"] },
+            regex: new RegExp(`^${item}$`, "i"),
           },
-        ],
+        },
       });
 
-      if (faculty) facultyAuthors.push(faculty._id);
-      else otherAuthors.push(name);
+      if (facultyByName) {
+        facultyAuthors.push(facultyByName._id);
+      } else {
+        otherAuthors.push(item); // Strictly an external author name now
+      }
     }
 
     const newPublication = new Publication({
       title,
-      authors: facultyAuthors,
+      authors: facultyAuthors, // IDs will now properly go here!
       otherAuthors,
       year,
       journal,

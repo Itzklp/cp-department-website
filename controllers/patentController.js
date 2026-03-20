@@ -3,7 +3,6 @@ const XLSX = require("xlsx");
 const fs = require("fs");
 const path = require("path"); 
 
-
 // CREATE
 exports.createPatent = async (req, res) => {
   try {

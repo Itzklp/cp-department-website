@@ -5,6 +5,11 @@ const departmentEventSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  // 🔥 CRITICAL FIX: Added coordinators field so the dashboard can find it
+  coordinators: {
+    type: [String],
+    required: true,
+  },
   type: {
     type: String,
     enum: ["Seminar", "Workshop", "Conference", "Event"],

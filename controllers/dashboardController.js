@@ -8,57 +8,101 @@ const PublishedBook = require('../models/publishedBooksModel');
 const DepartmentEvent = require('../models/departmentEventsModel');
 const InvitedTalk = require('../models/invitedTalkModel');
 const FacultyAward = require('../models/facultyAwardModel');
+const Faculty = require('../models/facultyModels');
 
 exports.getFacultyDashboardData = async (req, res) => {
   try {
-    // Extract the references based on your auth middleware
-    const facultyId = req.user.facultyProfile; // ObjectId for refs like authors, projectPI
-    const facultyName = req.user.name; // String for schemas that store the literal name
+    const user = req.user;
+    let facultyId = user.facultyProfile;
 
-    // Fetch all data concurrently as flat arrays. 
-    // We add .catch(() => []) to ensure that if one table is missing/empty, it doesn't break the whole dashboard.
-    const [
-      publications,
-      projects,
-      conferences,
-      phdThesis,
-      patents,
-      books,
-      events,
-      talks,
-      awards
-    ] = await Promise.all([
-      Publication.find({ authors: facultyId }).sort({ year: -1 }).catch(() => []),
-      Project.find({ $or: [{ projectPI: facultyId }, { projectCoPI: facultyId }] }).sort({ dateSanctioned: -1 }).catch(() => []),
-      Conference.find({ $or: [{ authors: facultyId }, { authors: facultyName }] }).catch(() => []),
-      PhdThesis.find({ $or: [{ supervisor: facultyId }, { supervisor: facultyName }] }).catch(() => []),
-      Patent.find({ $or: [{ inventors: facultyId }, { inventors: facultyName }] }).catch(() => []),
-      PublishedBook.find({ authors: facultyId }).catch(() => []),
-      DepartmentEvent.find({ coordinators: facultyId }).catch(() => []),
-      InvitedTalk.find({ speaker: facultyName }).catch(() => []),
-      FacultyAward.find({ awardee: facultyId }).catch(() => [])
-    ]);
+    // 1. Aggressive Identity Resolution
+    if (!facultyId) {
+      const faculty = await Faculty.findOne({ email: user.email });
+      if (faculty) facultyId = faculty._id;
+    }
 
-    // Format the response EXACTLY as the new React frontend expects it
-    const dashboardData = {
-      publications: publications || [],
-      projects: projects || [],
-      conferences: conferences || [],
-      phdThesis: phdThesis || [],
-      patents: patents || [],
-      books: books || [],
-      events: events || [],
-      talks: talks || [],
-      awards: awards || []
+    const safeFacultyId = facultyId || '000000000000000000000000'; // Prevent CastErrors
+    const isAdmin = user.role === 'admin';
+
+    // Extract just the First Name for highly relaxed string matching
+    // (e.g., if user.name is "Dr. John Doe", we search for "John")
+    const nameParts = (user.name || "").replace(/dr\.|prof\./i, '').trim().split(' ');
+    const firstName = nameParts[0] || "";
+    const nameRegex = new RegExp(firstName, "i");
+
+    // 2. Query Builder (Shows everything if Admin, otherwise filters strictly)
+    const getFilter = (orConditions) => isAdmin ? {} : { $or: orConditions };
+
+    // 3. Safe Fetch Wrapper using .lean() to prevent Mongoose schema crash on legacy data
+    const fetchSafe = async (modelName, queryPromise) => {
+      try {
+        return await queryPromise;
+      } catch (error) {
+        console.error(`[Dashboard] Failed fetching ${modelName}:`, error.message);
+        return [];
+      }
     };
+
+    const [
+      publications, projects, conferences, phdThesis, patents, books, events, talks, awards
+    ] = await Promise.all([
+      fetchSafe('Publications', Publication.find(getFilter([
+        { authors: safeFacultyId },
+        { otherAuthors: { $regex: nameRegex } }
+      ])).lean()),
+
+      fetchSafe('Projects', Project.find(getFilter([
+        { projectPI: safeFacultyId },
+        { projectCoPI: safeFacultyId },
+        { collaborator: { $regex: nameRegex } }
+      ])).lean()),
+
+      fetchSafe('Conferences', Conference.find(getFilter([
+        { authors: safeFacultyId }, { authors: nameRegex }
+      ])).lean()),
+
+      fetchSafe('PhdThesis', PhdThesis.find(getFilter([
+        { supervisor: safeFacultyId }, { supervisor: nameRegex }
+      ])).lean()),
+
+      fetchSafe('Patents', Patent.find(getFilter([
+        { authors: safeFacultyId }, { authors: nameRegex }
+      ])).lean()),
+
+      fetchSafe('Books', PublishedBook.find(getFilter([
+        { author: safeFacultyId }, { author: nameRegex }
+      ])).lean()),
+
+      fetchSafe('Events', DepartmentEvent.find(getFilter([
+        { coordinators: safeFacultyId }, { coordinators: nameRegex }
+      ])).lean()),
+
+      fetchSafe('Talks', InvitedTalk.find(getFilter([
+        { speaker: safeFacultyId }, { speaker: nameRegex }
+      ])).lean()),
+
+      fetchSafe('Awards', FacultyAward.find(getFilter([
+        { facultyName: safeFacultyId }, { facultyName: nameRegex }
+      ])).lean())
+    ]);
 
     res.status(200).json({
       success: true,
-      data: dashboardData
+      data: {
+        publications: publications || [],
+        projects: projects || [],
+        conferences: conferences || [],
+        phdThesis: phdThesis || [],
+        patents: patents || [],
+        books: books || [],
+        events: events || [],
+        talks: talks || [],
+        awards: awards || []
+      }
     });
 
   } catch (error) {
-    console.error("Dashboard fetch error:", error);
+    console.error("Dashboard master fetch error:", error);
     res.status(500).json({ success: false, message: "Server Error fetching dashboard" });
   }
 };

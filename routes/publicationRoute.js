@@ -13,6 +13,9 @@ const {
   bulkUploadPublications,
 } = require("../controllers/publicationController");
 
+// 🔥 IMPORT THE AUTH MIDDLEWARE
+const { protect } = require("../middleware/authMiddleware");
+
 const router = express.Router();
 
 // ✅ Ensure uploads directory exists
@@ -40,6 +43,10 @@ const upload = multer({
     }
   },
 });
+
+// 🔥 PROTECT ALL PUBLICATION ROUTES
+// This forces every route below this line to require a valid Bearer Token
+router.use(protect);
 
 // Route to add publication
 router.post("/", addPublication);

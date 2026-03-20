@@ -10,8 +10,9 @@ const {
 } = require("../controllers/departmentEventsController");
 
 const departmentEventsController = require("../controllers/departmentEventsController");
-
+const { protect } = require("../middleware/authMiddleware");
 const router = express.Router();
+router.use(protect)
 const fs = require("fs");
 const path = require("path");
 const multer = require("multer");

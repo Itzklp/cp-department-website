@@ -1,9 +1,12 @@
 const express = require("express");
+const { protect } = require("../middleware/authMiddleware");
 const router = express.Router();
 const multer = require("multer");
 const fs = require("fs");
 const path = require("path");
 const thesisController = require("../controllers/phdThesisController");
+
+router.use(protect);
 
 // Bulk Upload Controller
 const uploadDir = path.join(__dirname, "../uploads");

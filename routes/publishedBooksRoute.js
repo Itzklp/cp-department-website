@@ -13,7 +13,8 @@ const fs = require("fs");
 const path = require("path");
 const multer = require("multer");
 const router = express.Router();
-
+const { protect } = require("../middleware/authMiddleware");
+router.use(protect)
 // Add new book / book chapter
 router.post("/", addPublishedBook);
 router.get("/", getPublishedBooks);
