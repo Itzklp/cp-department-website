@@ -19,7 +19,7 @@ const userSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ["faculty", "admin"],
+    enum: ["faculty", "admin", "hod"],
     default: "faculty",
   },
   password: {
@@ -32,10 +32,18 @@ const userSchema = new mongoose.Schema({
   facultyProfile: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "Faculty",
+  },status: {
+    type: String,
+    enum: ["ACTIVE", "SUSPENDED"],
+    default: "ACTIVE"
+  },
+  isDeleted: {
+    type: Boolean,
+    default: false
   },
   isFirstLogin: {
     type: Boolean,
-    default: true, // Forces password change on first login
+    default: true,
   },
   resetPasswordToken: String,
   resetPasswordExpire: Date,

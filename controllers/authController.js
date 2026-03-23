@@ -7,19 +7,24 @@ const crypto = require("crypto");
 exports.login = async (req, res) => {
   const { email, password } = req.body;
 
-  // Validate email & password
   if (!email || !password) {
     return res.status(400).json({ success: false, message: "Please provide an email and password" });
   }
 
-  // Check for user
   const user = await User.findOne({ email }).select("+password");
 
   if (!user) {
     return res.status(401).json({ success: false, message: "Invalid credentials" });
   }
 
-  // Check if password matches
+  // 🔥 NEW: Check if user is suspended or deleted BEFORE checking password
+  if (user.isDeleted) {
+    return res.status(403).json({ success: false, message: "Account has been deleted." });
+  }
+  if (user.status === "SUSPENDED") {
+    return res.status(403).json({ success: false, message: "Your account has been suspended by an Admin." });
+  }
+
   const isMatch = await user.matchPassword(password);
 
   if (!isMatch) {

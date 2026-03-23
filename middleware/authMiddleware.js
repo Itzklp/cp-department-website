@@ -20,14 +20,19 @@ exports.protect = async (req, res, next) => {
   }
 
   try {
-    // Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-    // Attach user to req object
     req.user = await User.findById(decoded.id);
 
     if (!req.user) {
       return res.status(401).json({ success: false, message: "User not found" });
+    }
+
+    // 🔥 NEW: Block access if status changed while logged in
+    if (req.user.isDeleted) {
+      return res.status(403).json({ success: false, message: "Account deleted." });
+    }
+    if (req.user.status === "SUSPENDED") {
+      return res.status(403).json({ success: false, message: "Account suspended." });
     }
 
     next();

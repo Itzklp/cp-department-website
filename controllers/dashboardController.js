@@ -10,103 +10,6 @@ const InvitedTalk = require('../models/invitedTalkModel');
 const FacultyAward = require('../models/facultyAwardModel');
 const Faculty = require('../models/facultyModels');
 
-// exports.getFacultyDashboardData = async (req, res) => {
-//   try {
-//     const user = req.user;
-//     let facultyId = user.facultyProfile;
-
-//     // 1. Aggressive Identity Resolution
-//     if (!facultyId) {
-//       const faculty = await Faculty.findOne({ email: user.email });
-//       if (faculty) facultyId = faculty._id;
-//     }
-
-//     const safeFacultyId = facultyId || '000000000000000000000000'; // Prevent CastErrors
-//     const isAdmin = user.role === 'admin';
-
-//     // Extract just the First Name for highly relaxed string matching
-//     // (e.g., if user.name is "Dr. John Doe", we search for "John")
-//     const nameParts = (user.name || "").replace(/dr\.|prof\./i, '').trim().split(' ');
-//     const firstName = nameParts[0] || "";
-//     const nameRegex = new RegExp(firstName, "i");
-
-//     // 2. Query Builder (Shows everything if Admin, otherwise filters strictly)
-//     const getFilter = (orConditions) => isAdmin ? {} : { $or: orConditions };
-
-//     // 3. Safe Fetch Wrapper using .lean() to prevent Mongoose schema crash on legacy data
-//     const fetchSafe = async (modelName, queryPromise) => {
-//       try {
-//         return await queryPromise;
-//       } catch (error) {
-//         console.error(`[Dashboard] Failed fetching ${modelName}:`, error.message);
-//         return [];
-//       }
-//     };
-
-//     const [
-//       publications, projects, conferences, phdThesis, patents, books, events, talks, awards
-//     ] = await Promise.all([
-//       fetchSafe('Publications', Publication.find(getFilter([
-//         { authors: safeFacultyId },
-//         { otherAuthors: { $regex: nameRegex } }
-//       ])).lean()),
-
-//       fetchSafe('Projects', Project.find(getFilter([
-//         { projectPI: safeFacultyId },
-//         { projectCoPI: safeFacultyId },
-//         { collaborator: { $regex: nameRegex } }
-//       ])).lean()),
-
-//       fetchSafe('Conferences', Conference.find(getFilter([
-//         { authors: safeFacultyId }, { authors: nameRegex }
-//       ])).lean()),
-
-//       fetchSafe('PhdThesis', PhdThesis.find(getFilter([
-//         { supervisor: safeFacultyId }, { supervisor: nameRegex }
-//       ])).lean()),
-
-//       fetchSafe('Patents', Patent.find(getFilter([
-//         { authors: safeFacultyId }, { authors: nameRegex }
-//       ])).lean()),
-
-//       fetchSafe('Books', PublishedBook.find(getFilter([
-//         { author: safeFacultyId }, { author: nameRegex }
-//       ])).lean()),
-
-//       fetchSafe('Events', DepartmentEvent.find(getFilter([
-//         { coordinators: safeFacultyId }, { coordinators: nameRegex }
-//       ])).lean()),
-
-//       fetchSafe('Talks', InvitedTalk.find(getFilter([
-//         { speaker: safeFacultyId }, { speaker: nameRegex }
-//       ])).lean()),
-
-//       fetchSafe('Awards', FacultyAward.find(getFilter([
-//         { facultyName: safeFacultyId }, { facultyName: nameRegex }
-//       ])).lean())
-//     ]);
-
-//     res.status(200).json({
-//       success: true,
-//       data: {
-//         publications: publications || [],
-//         projects: projects || [],
-//         conferences: conferences || [],
-//         phdThesis: phdThesis || [],
-//         patents: patents || [],
-//         books: books || [],
-//         events: events || [],
-//         talks: talks || [],
-//         awards: awards || []
-//       }
-//     });
-
-//   } catch (error) {
-//     console.error("Dashboard master fetch error:", error);
-//     res.status(500).json({ success: false, message: "Server Error fetching dashboard" });
-//   }
-// };
-
 const getFacultyDashboardData = async (req, res) => {
   try {
     const user = req.user;
@@ -114,9 +17,9 @@ const getFacultyDashboardData = async (req, res) => {
     const safeName = user.name ? user.name.trim() : "";
     const nameRegex = safeName ? new RegExp(`^${safeName}$`, 'i') : null;
 
-    // 🔥 1. Check for Admin OR Head of Department
-    let isHOD = false;
-    if (safeFacultyId) {
+    // 1. Identify Elevated Privileges
+    let isHOD = user.role === "hod";
+    if (safeFacultyId && !isHOD) {
       const facProfile = await Faculty.findById(safeFacultyId).select('designation').lean();
       if (facProfile && facProfile.designation === 'Head of Department') {
         isHOD = true;
@@ -124,45 +27,51 @@ const getFacultyDashboardData = async (req, res) => {
     }
     const isAdminOrHOD = user.role === 'admin' || isHOD;
 
-    // Filter logic: Admins and HODs get {} (Everything)
-    const getFilter = (conditions) => {
-      if (isAdminOrHOD) return {}; 
-      const validConditions = conditions.filter(c => Object.values(c)[0] != null);
-      return validConditions.length > 0 ? { $or: validConditions } : { _id: null };
+    // 2. Optimized Filter Logic to prevent CastErrors
+    // Separates ObjectId matches from String/Regex matches
+    const buildFilter = (objectIdField, stringField) => {
+      if (isAdminOrHOD) return {};
+      
+      const conditions = [];
+      if (safeFacultyId && objectIdField) conditions.push({ [objectIdField]: safeFacultyId });
+      if (nameRegex && stringField) conditions.push({ [stringField]: nameRegex });
+
+      return conditions.length > 0 ? { $or: conditions } : { _id: null };
     };
 
     const fetchSafe = async (name, promise) => {
       try { return await promise; } 
-      catch (err) { console.error(`Error fetching ${name}:`, err); return []; }
+      catch (err) { 
+        console.error(`[Dashboard] Error fetching ${name}:`, err.message); 
+        return []; 
+      }
     };
 
+    // 3. Fetch Data with Correct Field Routing
     let [
       publications, projects, conferences, phdThesis, 
       patents, books, events, talks, awards
     ] = await Promise.all([
-      fetchSafe('Publications', Publication.find(getFilter([{ authors: safeFacultyId }, { authors: nameRegex }])).lean()),
-      fetchSafe('Projects', Project.find(getFilter([{ collaborator: safeFacultyId }, { collaborator: nameRegex }])).lean()),
-      fetchSafe('Conferences', Conference.find(getFilter([{ authors: safeFacultyId }, { authors: nameRegex }])).lean()),
-      fetchSafe('phdThesis', PhdThesis.find(getFilter([{ supervisor: safeFacultyId }, { supervisor: nameRegex }])).lean()),
-      fetchSafe('Patents', Patent.find(getFilter([{ authors: safeFacultyId }, { authors: nameRegex }])).lean()),
-      fetchSafe('Books', PublishedBook.find(getFilter([{ author: safeFacultyId }, { author: nameRegex }])).lean()),
-      fetchSafe('Events', DepartmentEvent.find(getFilter([{ coordinators: safeFacultyId }, { coordinators: nameRegex }])).lean()),
-      fetchSafe('Talks', InvitedTalk.find(getFilter([{ speaker: safeFacultyId }, { speaker: nameRegex }])).lean()),
-      fetchSafe('Awards', FacultyAward.find(getFilter([{ facultyName: safeFacultyId }, { facultyName: nameRegex }])).lean())
+      fetchSafe('Publications', Publication.find(buildFilter('authors', 'otherAuthors')).lean()),
+      fetchSafe('Projects', Project.find(buildFilter('collaborator', 'otherCollaborators')).lean()),
+      fetchSafe('Conferences', Conference.find(buildFilter('authors', 'otherAuthors')).lean()),
+      fetchSafe('phdThesis', PhdThesis.find(buildFilter('supervisor', 'otherSupervisors')).lean()),
+      fetchSafe('Patents', Patent.find(buildFilter('authors', 'otherAuthors')).lean()),
+      fetchSafe('Books', PublishedBook.find(buildFilter('author', 'otherAuthors')).lean()),
+      fetchSafe('Events', DepartmentEvent.find(buildFilter('coordinators', 'otherCoordinators')).lean()),
+      fetchSafe('Talks', InvitedTalk.find(buildFilter('speaker', 'otherSpeakers')).lean()),
+      fetchSafe('Awards', FacultyAward.find(buildFilter('facultyName', 'otherFaculty')).lean())
     ]);
 
-    // Build ID-to-Name Dictionary
+    // 4. Build ID-to-Name Dictionary
     const allFaculty = await Faculty.find().select('firstName lastName name').lean();
     const facultyMap = {};
     allFaculty.forEach(f => {
-       const fName = f.firstName || '';
-       const lName = f.lastName || '';
-       let fullName = `${fName} ${lName}`.trim();
-       if (!fullName) fullName = f.name || "Unknown Faculty";
+       const fullName = `${f.firstName || ''} ${f.lastName || ''}`.trim() || f.name || "Unknown Faculty";
        facultyMap[f._id.toString()] = fullName;
     });
 
-    // ID Replacer
+    // 5. Replace IDs with Names in the response
     const rawData = { publications, projects, conferences, phdThesis, patents, books, events, talks, awards };
     const cleanDataString = JSON.stringify(rawData, (key, value) => {
        if (key === '_id') return value;
@@ -172,7 +81,7 @@ const getFacultyDashboardData = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      isAdminOrHOD: isAdminOrHOD, // 🔥 Pass elevated privilege flag to frontend
+      isAdminOrHOD: isAdminOrHOD,
       data: JSON.parse(cleanDataString)
     });
     

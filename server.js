@@ -61,8 +61,11 @@ app.use("/api/v1/patent", require("./routes/patentRoute"));
 //PhD Thesis Route
 app.use("/api/v1/phdThesis", require("./routes/phdThesisRoute"));
 
-// Dashboard Route (ADD THIS LINE)
+// Dashboard Route
 app.use("/api/v1/dashboard", require("./routes/dashboardRoute"));
+
+// Admin Route
+app.use("/api/v1/admin", require("./routes/adminRoute"));
 
 // Test Route
 app.get("/", (req, res) => {
