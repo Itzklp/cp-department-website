@@ -114,16 +114,23 @@ const searchPublicationsByTitle = async (req, res) => {
 const updatePublication = async (req, res) => {
   try {
     const { id } = req.params;
+    const userProfileId = req.user.facultyProfile?.toString();
+    const isAdmin = req.user.role === 'admin';
 
-    const updated = await Publication.findByIdAndUpdate(id, req.body, {
-      new: true,
-    }).populate("authors", "firstName lastName email designation");
+    const existing = await Publication.findById(id);
+    if (!existing) return res.status(404).json({ error: "Publication not found" });
 
-    if (!updated) {
-      return res.status(404).json({ error: "Publication not found" });
+    // Ensure the logged-in user actually owns this record before updating
+    if (!isAdmin && !existing.authors.some(authId => authId.toString() === userProfileId)) {
+      return res.status(403).json({ error: "Not authorized to update this publication" });
     }
 
-    res.json(updated);
+    const updated = await Publication.findByIdAndUpdate(id, req.body, {
+      new: true, // Returns the freshly updated document
+      runValidators: true
+    }).populate("authors", "firstName lastName email designation");
+
+    res.status(200).json(updated); // React uses this object to update the state
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -132,13 +139,19 @@ const updatePublication = async (req, res) => {
 const deletePublication = async (req, res) => {
   try {
     const { id } = req.params;
+    const userProfileId = req.user.facultyProfile?.toString();
+    const isAdmin = req.user.role === 'admin';
 
-    const deleted = await Publication.findByIdAndDelete(id);
-    if (!deleted) {
-      return res.status(404).json({ error: "Publication not found" });
+    const existing = await Publication.findById(id);
+    if (!existing) return res.status(404).json({ error: "Publication not found" });
+
+    // Ownership check
+    if (!isAdmin && !existing.authors.some(authId => authId.toString() === userProfileId)) {
+      return res.status(403).json({ error: "Not authorized to delete this publication" });
     }
 
-    res.json({ message: "Publication deleted successfully" });
+    await Publication.findByIdAndDelete(id);
+    res.status(200).json({ message: "Publication deleted successfully", id });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

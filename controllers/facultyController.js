@@ -15,12 +15,17 @@ const addFaculty = async (req, res) => {
       researchArea, 
       teaches, 
       joiningDate,
-      designation
+      designation,
+      password
     } = req.body;
 
     // Validate required fields
     if (!firstName || !lastName || !email || !department) {
       return res.status(400).send({ success: false, message: "Missing fields" });
+    }
+
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: "Only administrators can add new faculty." });
     }
 
     const existingFaculty = await facultyModels.findOne({ email });
@@ -39,12 +44,12 @@ const addFaculty = async (req, res) => {
     
     if (!existingUser) {
         // Create User with default password
-        const generatedPassword = "12345678"; 
+        const generatedPassword = password; 
         
         await User.create({
             name: `${firstName} ${lastName}`,
             email: email,
-            password: generatedPassword, // Will be hashed by pre-save hook
+            password: generatedPassword,
             role: "faculty",
             facultyProfile: faculty._id,
             isFirstLogin: true

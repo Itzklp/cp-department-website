@@ -47,9 +47,8 @@ const { protect, authorize } = require('../middleware/authMiddleware'); // Impor
 const { 
     addFaculty, getAllFaculty, updateFaculty, deleteFaculty, getFacultyDashboardData
 } = require('../controllers/facultyController');
-
 const router = express.Router();
-
+router.use(protect); // Apply authentication middleware to all routes in this router
 // Public Routes (if any needed)
 router.get('/', getAllFaculty); 
 
