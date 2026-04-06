@@ -1,15 +1,14 @@
 const mongoose = require("mongoose");
 
 const phdThesisSchema = new mongoose.Schema({
-  name: {
+  scholarName: {
     type: String,
     required: true,
   },
   studentId: {
     type: String,
-    required: true,
   },
-  topic: {
+  thesisTitle: {
     type: String,
     required: true,
   },
@@ -21,10 +20,25 @@ const phdThesisSchema = new mongoose.Schema({
     type: String,
     default: "",
   },
-  yearAwarded: {
+  year: {
     type: Number,
-    default: 2024,
+    default: new Date().getFullYear(),
   },
-});
+  status: {
+    type: String,
+    default: "Ongoing",
+  },
+  fellowshipProgram: {
+    type: String,
+    enum: ["Institute Fellow", "Industry Sponsored Fellowship", "Other"],
+    default: "Institute Fellow"
+  },
+  dateOfJoining: { type: Date },
+  dateOfProposal: { type: Date },
+  dateOfPhdQualified: { type: Date },
+  dateOfPreSubmission: { type: Date },
+  dateOfThesisSubmission: { type: Date },
+  dateOfVivaVoce: { type: Date }
+}, { timestamps: true });
 
 module.exports = mongoose.model("PhDThesis", phdThesisSchema);

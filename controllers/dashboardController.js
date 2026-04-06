@@ -28,13 +28,21 @@ const getFacultyDashboardData = async (req, res) => {
     const isAdminOrHOD = user.role === 'admin' || isHOD;
 
     // 2. Optimized Filter Logic to prevent CastErrors
-    // Separates ObjectId matches from String/Regex matches
-    const buildFilter = (objectIdField, stringField) => {
+    // Updated to accept arrays of fields so we can check multiple ObjectId or String fields
+    const buildFilter = (objectIdFields = [], stringFields = []) => {
       if (isAdminOrHOD) return {};
       
       const conditions = [];
-      if (safeFacultyId && objectIdField) conditions.push({ [objectIdField]: safeFacultyId });
-      if (nameRegex && stringField) conditions.push({ [stringField]: nameRegex });
+      
+      // Push conditions for any ObjectId fields
+      if (safeFacultyId && objectIdFields.length > 0) {
+        objectIdFields.forEach(field => conditions.push({ [field]: safeFacultyId }));
+      }
+      
+      // Push conditions for any String fields (using the Regex)
+      if (nameRegex && stringFields.length > 0) {
+        stringFields.forEach(field => conditions.push({ [field]: nameRegex }));
+      }
 
       return conditions.length > 0 ? { $or: conditions } : { _id: null };
     };
@@ -47,20 +55,26 @@ const getFacultyDashboardData = async (req, res) => {
       }
     };
 
-    // 3. Fetch Data with Correct Field Routing
+    // 3. Fetch Data with Correct Field Routing based on actual Model schemas
     let [
       publications, projects, conferences, phdThesis, 
       patents, books, events, talks, awards
     ] = await Promise.all([
-      fetchSafe('Publications', Publication.find(buildFilter('authors', 'otherAuthors')).lean()),
-      fetchSafe('Projects', Project.find(buildFilter('collaborator', 'otherCollaborators')).lean()),
-      fetchSafe('Conferences', Conference.find(buildFilter('authors', 'otherAuthors')).lean()),
-      fetchSafe('phdThesis', PhdThesis.find(buildFilter('supervisor', 'otherSupervisors')).lean()),
-      fetchSafe('Patents', Patent.find(buildFilter('authors', 'otherAuthors')).lean()),
-      fetchSafe('Books', PublishedBook.find(buildFilter('author', 'otherAuthors')).lean()),
-      fetchSafe('Events', DepartmentEvent.find(buildFilter('coordinators', 'otherCoordinators')).lean()),
-      fetchSafe('Talks', InvitedTalk.find(buildFilter('speaker', 'otherSpeakers')).lean()),
-      fetchSafe('Awards', FacultyAward.find(buildFilter('facultyName', 'otherFaculty')).lean())
+      // authors = ObjectId[], otherAuthors = String[]
+      fetchSafe('Publications', Publication.find(buildFilter(['authors'], ['otherAuthors'])).lean()),
+      
+      // projectPI & projectCoPI = ObjectId, collaborator = String
+      fetchSafe('Projects', Project.find(buildFilter(['projectPI', 'projectCoPI'], ['collaborator'])).lean()),
+      
+      fetchSafe('Conferences', Conference.find(buildFilter(['authors'], ['otherAuthors'])).lean()),
+      fetchSafe('phdThesis', PhdThesis.find(buildFilter(['supervisor'], ['otherSupervisors'])).lean()),
+      fetchSafe('Patents', Patent.find(buildFilter(['authors'], ['otherAuthors'])).lean()),
+      fetchSafe('Books', PublishedBook.find(buildFilter(['author'], ['otherAuthors'])).lean()),
+      fetchSafe('Events', DepartmentEvent.find(buildFilter(['coordinators'], ['otherCoordinators'])).lean()),
+      fetchSafe('Talks', InvitedTalk.find(buildFilter(['speaker'], ['otherSpeakers'])).lean()),
+      
+      // facultyName = String (No ObjectId reference exists in the FacultyAward model)
+      fetchSafe('Awards', FacultyAward.find(buildFilter([], ['facultyName'])).lean())
     ]);
 
     // 4. Build ID-to-Name Dictionary

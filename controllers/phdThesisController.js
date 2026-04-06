@@ -74,29 +74,34 @@ exports.bulkUploadTheses = async (req, res) => {
     const inserted = [];
 
     for (const row of sheetData) {
-      const name = row["Name"]?.trim();
+      const scholarName = row["Scholar Name"]?.trim() || row["Name"]?.trim();
       const studentId = row["StudentId"]?.trim();
-      const topic = row["Topic"]?.trim();
+      const thesisTitle = row["Thesis Title"]?.trim() || row["Topic"]?.trim();
       const supervisor = row["Supervisor"]?.trim();
       const coSupervisor = row["CoSupervisor"]?.trim() || "";
-      const yearAwarded = row["YearAwarded"] ? parseInt(row["YearAwarded"]) : 2024;
+      const year = row["Year"] ? parseInt(row["Year"]) : new Date().getFullYear();
+      const status = row["Status"]?.trim() || "Ongoing";
+      const fellowshipProgram = row["Fellowship Program"]?.trim() || "Institute Fellow";
+      
+      const parseDate = (val) => val ? new Date(val) : null;
 
-      if (!name || !studentId || !topic || !supervisor) continue; // skip invalid rows
+      if (!scholarName || !thesisTitle || !supervisor) continue;
 
       const thesis = new PhDThesis({
-        name,
-        studentId,
-        topic,
-        supervisor,
-        coSupervisor,
-        yearAwarded,
+        scholarName, studentId, thesisTitle, supervisor, coSupervisor, year, status, fellowshipProgram,
+        dateOfJoining: parseDate(row["DOJ"]),
+        dateOfProposal: parseDate(row["Date of Proposal"]),
+        dateOfPhdQualified: parseDate(row["Date Qualified"]),
+        dateOfPreSubmission: parseDate(row["Pre-Submission"]),
+        dateOfThesisSubmission: parseDate(row["Thesis Submission"]),
+        dateOfVivaVoce: parseDate(row["Viva Voce"])
       });
 
       await thesis.save();
       inserted.push(thesis);
     }
 
-    fs.unlinkSync(filePath); // delete uploaded file
+    fs.unlinkSync(filePath); 
 
     res.status(201).json({
       message: `${inserted.length} theses uploaded successfully`,
