@@ -76,12 +76,12 @@ exports.forgotPassword = async (req, res) => {
   // Change this URL
   const resetUrl = `${req.protocol}://http://localhost:3001/api/v1/auth/resetpassword/${resetToken}`;
 
-  const message = `You are receiving this email because you (or someone else) has requested the reset of a password. \n\n Please Click on: \n ${resetUrl}`;
+  const message = `Dear User,\n\nWe received a request to reset the password associated with your account on the BITS Pilani Department Portal.\n\nPlease click on the following link to securely choose a new password:\n${resetUrl}\n\nIf you did not request this password reset, please ignore this email. Your current password will remain unchanged and your account is secure.\n\nBest regards,\nDepartment Portal Administration`;
 
   try {
     await sendEmail({
       email: user.email,
-      subject: "Password Reset Token",
+      subject: "Password Reset Request - BITS Pilani Department Portal",
       message,
     });
 
