@@ -21,7 +21,9 @@ exports.protect = async (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = await User.findById(decoded.id);
+    
+    // 🔥 THE FIX: Check for both _id (new token format) and id (old token format)
+    req.user = await User.findById(decoded._id || decoded.id);
 
     if (!req.user) {
       return res.status(401).json({ success: false, message: "User not found" });
@@ -37,6 +39,7 @@ exports.protect = async (req, res, next) => {
 
     next();
   } catch (err) {
+    console.error("Auth Middleware Error:", err);
     return res.status(401).json({ success: false, message: "Not authorized to access this route" });
   }
 };

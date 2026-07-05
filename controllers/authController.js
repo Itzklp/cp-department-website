@@ -1,145 +1,227 @@
-const User = require("../models/userModel");
-const sendEmail = require("../utils/sendEmail");
-const crypto = require("crypto");
+const User = require('../models/userModel');
+const { OAuth2Client } = require('google-auth-library');
+const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
+const sendEmail = require('../utils/sendEmail');
 
-// @desc    Login user
-// @route   POST /api/v1/auth/login
-exports.login = async (req, res) => {
-  const { email, password } = req.body;
+// Initialize Google Client for SSO
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
-  if (!email || !password) {
-    return res.status(400).json({ success: false, message: "Please provide an email and password" });
-  }
-
-  const user = await User.findOne({ email }).select("+password");
-
-  if (!user) {
-    return res.status(401).json({ success: false, message: "Invalid credentials" });
-  }
-
-  // 🔥 NEW: Check if user is suspended or deleted BEFORE checking password
-  if (user.isDeleted) {
-    return res.status(403).json({ success: false, message: "Account has been deleted." });
-  }
-  if (user.status === "SUSPENDED") {
-    return res.status(403).json({ success: false, message: "Your account has been suspended by an Admin." });
-  }
-
-  const isMatch = await user.matchPassword(password);
-
-  if (!isMatch) {
-    return res.status(401).json({ success: false, message: "Invalid credentials" });
-  }
-
-  sendTokenResponse(user, 200, res);
-};
-
-// @desc    Get current logged in user
-// @route   GET /api/v1/auth/me
-exports.getMe = async (req, res) => {
-  const user = await User.findById(req.user.id).populate('facultyProfile');
-  res.status(200).json({ success: true, data: user });
-};
-
-// @desc    Update password (Logged in user)
-// @route   PUT /api/v1/auth/updatepassword
-exports.updatePassword = async (req, res) => {
-  const user = await User.findById(req.user.id).select('+password');
-
-  // Check current password
-  if (!(await user.matchPassword(req.body.currentPassword))) {
-    return res.status(401).json({ success: false, message: "Incorrect current password" });
-  }
-
-  user.password = req.body.newPassword;
-  user.isFirstLogin = false; // Disable first login flag
-  await user.save();
-
-  sendTokenResponse(user, 200, res);
-};
-
-// @desc    Forgot Password
-// @route   POST /api/v1/auth/forgotpassword
-exports.forgotPassword = async (req, res) => {
-  const user = await User.findOne({ email: req.body.email });
-
-  if (!user) {
-    return res.status(404).json({ success: false, message: "There is no user with that email" });
-  }
-
-  // Get reset token
-  const resetToken = user.getResetPasswordToken();
-
-  await user.save({ validateBeforeSave: false });
-
-  // Create reset url
-  // Change this URL
-  const resetUrl = `${req.protocol}://http://localhost:3001/api/v1/auth/resetpassword/${resetToken}`;
-
-  const message = `You are receiving this email because you (or someone else) has requested the reset of a password. \n\n Please Click on: \n ${resetUrl}`;
-
-  try {
-    await sendEmail({
-      email: user.email,
-      subject: "Password Reset Token",
-      message,
-    });
-
-    res.status(200).json({ success: true, data: "Email sent" });
-  } catch (err) {
-    console.log(err);
-    user.resetPasswordToken = undefined;
-    user.resetPasswordExpire = undefined;
-    await user.save({ validateBeforeSave: false });
-    return res.status(500).json({ success: false, message: "Email could not be sent" });
-  }
-};
-
-// @desc    Reset Password
-// @route   PUT /api/v1/auth/resetpassword/:resettoken
-exports.resetPassword = async (req, res) => {
-  // Get hashed token
-  const resetPasswordToken = crypto
-    .createHash("sha256")
-    .update(req.params.resettoken)
-    .digest("hex");
-
-  const user = await User.findOne({
-    resetPasswordToken,
-    resetPasswordExpire: { $gt: Date.now() },
-  });
-
-  if (!user) {
-    return res.status(400).json({ success: false, message: "Invalid token" });
-  }
-
-  // Set new password
-  user.password = req.body.password;
-  user.resetPasswordToken = undefined;
-  user.resetPasswordExpire = undefined;
-  user.isFirstLogin = false;
-  
-  await user.save();
-
-  sendTokenResponse(user, 200, res);
-};
-
-// Helper function to get token from model, create cookie and send response
+// ==========================================
+// HELPER: Generate Token & Send Response
+// ==========================================
 const sendTokenResponse = (user, statusCode, res) => {
-  const token = user.getSignedJwtToken();
+    // Generate JWT token
+    const token = jwt.sign(
+        { _id: user._id, role: user.role },
+        process.env.JWT_SECRET || 'default_secret',
+        { expiresIn: process.env.JWT_EXPIRE || '30d' }
+    );
 
-  const options = {
-    expires: new Date(Date.now() + process.env.JWT_COOKIE_EXPIRE * 24 * 60 * 60 * 1000),
-    httpOnly: true,
-  };
-
-  res
-    .status(statusCode)
-    .cookie("token", token, options)
-    .json({
-      success: true,
-      token,
-      isFirstLogin: user.isFirstLogin,
-      role: user.role,
+    res.status(statusCode).json({
+        success: true,
+        token,
+        user: {
+            _id: user._id,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            isFirstLogin: user.isFirstLogin
+        }
     });
+};
+
+// ==========================================
+// GOOGLE SSO LOGIN (Strict Mode)
+// ==========================================
+const googleLogin = async (req, res) => {
+  try {
+    const { credential } = req.body;
+
+    if (!credential) {
+        return res.status(400).json({ success: false, message: "No Google token provided" });
+    }
+
+    // 1. Verify token with Google
+    const ticket = await googleClient.verifyIdToken({
+      idToken: credential,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+    
+    const payload = ticket.getPayload();
+    const userEmail = payload.email;
+
+    // 2. STRICT CHECK: Does this email exist in our DB?
+    const user = await User.findOne({ email: userEmail });
+    
+    if (!user) {
+      // Reject login: Do NOT create a new user document
+      return res.status(403).json({
+        success: false,
+        message: "Access Denied. Your email is not registered in the CISIS portal. Please contact the administrator to be added."
+      });
+    }
+
+    // 3. SUCCESS: User exists. Generate your portal's JWT token and log them in
+    sendTokenResponse(user, 200, res); 
+
+  } catch (error) {
+    console.error("Google SSO Error:", error);
+    res.status(401).json({ success: false, message: "Invalid Google Token or SSO failed." });
+  }
+};
+
+// ==========================================
+// MANUAL EMAIL/PASSWORD LOGIN
+// ==========================================
+const login = async (req, res) => {
+    try {
+        const { email, password } = req.body;
+
+        if (!email || !password) {
+            return res.status(400).json({ success: false, message: "Please provide email and password" });
+        }
+
+        // Check for user
+        const user = await User.findOne({ email }).select("+password");
+        if (!user) {
+            return res.status(401).json({ success: false, message: "Invalid credentials" });
+        }
+
+        // Check if password matches
+        const isMatch = await user.matchPassword(password);
+        if (!isMatch) {
+            return res.status(401).json({ success: false, message: "Invalid credentials" });
+        }
+
+        sendTokenResponse(user, 200, res);
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+// ==========================================
+// GET LOGGED IN USER (GET /me)
+// ==========================================
+const getMe = async (req, res) => {
+    try {
+        const user = await User.findById(req.user._id || req.user.id);
+        
+        if (!user) {
+            return res.status(404).json({ success: false, message: "User not found" });
+        }
+        
+        res.status(200).json({
+            success: true,
+            data: user
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+// ==========================================
+// FORGOT PASSWORD
+// ==========================================
+const forgotPassword = async (req, res) => {
+    try {
+        const user = await User.findOne({ email: req.body.email });
+
+        if (!user) {
+            return res.status(404).json({ success: false, message: "There is no user with that email" });
+        }
+
+        // Get reset token
+        const resetToken = user.getResetPasswordToken();
+        await user.save({ validateBeforeSave: false });
+
+        // Create reset url
+        const clientUrl = process.env.CLIENT_URL || "http://172.24.16.207";
+        const resetUrl = `${clientUrl}/reset-password/${resetToken}`;
+
+        const message = `You are receiving this email because a password reset was requested for your account.\n\nPlease click the link below to reset your password:\n\n${resetUrl}\n\nIf you did not request this, please ignore this email.`;
+
+        try {
+            await sendEmail({
+                email: user.email,
+                subject: "CISIS Portal - Password Reset",
+                message,
+            });
+
+            res.status(200).json({ success: true, data: "Email sent" });
+        } catch (err) {
+            console.error(err);
+            user.resetPasswordToken = undefined;
+            user.resetPasswordExpire = undefined;
+            await user.save({ validateBeforeSave: false });
+
+            return res.status(500).json({ success: false, message: "Email could not be sent" });
+        }
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+// ==========================================
+// RESET PASSWORD
+// ==========================================
+const resetPassword = async (req, res) => {
+    try {
+        // Get hashed token
+        const resetPasswordToken = crypto.createHash("sha256").update(req.params.token).digest("hex");
+
+        const user = await User.findOne({
+            resetPasswordToken,
+            resetPasswordExpire: { $gt: Date.now() },
+        });
+
+        if (!user) {
+            return res.status(400).json({ success: false, message: "Invalid or expired token" });
+        }
+
+        // Set new password
+        user.password = req.body.password;
+        user.resetPasswordToken = undefined;
+        user.resetPasswordExpire = undefined;
+
+        await user.save();
+
+        sendTokenResponse(user, 200, res);
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+// ==========================================
+// UPDATE PASSWORD
+// ==========================================
+const updatePassword = async (req, res) => {
+    try {
+        const user = await User.findById(req.user.id || req.user._id).select("+password");
+
+        // Check if current password matches
+        const isMatch = await user.matchPassword(req.body.currentPassword);
+        if (!isMatch) {
+            return res.status(401).json({ success: false, message: "Current password is incorrect" });
+        }
+
+        // Set the new password and clear the first login flag
+        user.password = req.body.newPassword;
+        user.isFirstLogin = false; 
+        
+        await user.save();
+
+        sendTokenResponse(user, 200, res);
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+module.exports = {
+    login,
+    googleLogin,
+    getMe,
+    forgotPassword,
+    resetPassword,
+    updatePassword
 };

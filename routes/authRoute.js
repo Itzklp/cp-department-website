@@ -4,13 +4,15 @@ const {
   getMe, 
   forgotPassword, 
   resetPassword, 
-  updatePassword 
+  updatePassword,
+  googleLogin 
 } = require("../controllers/authController");
 const { protect } = require("../middleware/authMiddleware");
 
 const router = express.Router();
 
 router.post("/login", login);
+router.post("/google-login", googleLogin);
 router.post("/forgotpassword", forgotPassword);
 router.put("/resetpassword/:resettoken", resetPassword);
 router.put("/updatepassword", protect, updatePassword);
