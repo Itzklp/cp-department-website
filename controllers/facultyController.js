@@ -3,6 +3,7 @@ const facultyModels = require("../models/facultyModels");
 const XLSX = require("xlsx");
 const sendEmail = require("../utils/sendEmail");
 const User = require("../models/userModel");
+const logActivity = require("../utils/logger");
 
 // Add Faculty
 const addFaculty = async (req, res) => {
@@ -46,7 +47,7 @@ const addFaculty = async (req, res) => {
         // Create User with default password
         const generatedPassword = password; 
         
-        await User.create({
+        const newUser = await User.create({
             name: `${firstName} ${lastName}`,
             email: email,
             password: generatedPassword,
@@ -54,6 +55,9 @@ const addFaculty = async (req, res) => {
             facultyProfile: faculty._id,
             isFirstLogin: true
         });
+
+        // LOG REGISTRATION
+        await logActivity(email, 'REGISTER', `Admin ${req.user.name || 'System'} created new faculty account`, req.ip, newUser._id);
 
         // 3. Send Email Notification
         try {

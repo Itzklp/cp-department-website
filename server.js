@@ -67,6 +67,9 @@ app.use("/api/v1/dashboard", require("./routes/dashboardRoute"));
 // Admin Route
 app.use("/api/v1/admin", require("./routes/adminRoute"));
 
+// Log Route
+app.use("/api/v1/logs", require("./routes/logRoute"));
+
 // Test Route
 app.get("/", (req, res) => {
   return res.status(200).send("Hello, World! From Kalp");

@@ -3,6 +3,7 @@ const { OAuth2Client } = require('google-auth-library');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const sendEmail = require('../utils/sendEmail');
+const logActivity = require('../utils/logger');
 
 // Initialize Google Client for SSO
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
@@ -55,6 +56,9 @@ const googleLogin = async (req, res) => {
     const user = await User.findOne({ email: userEmail });
     
     if (!user) {
+      // LOG FAILED SSO ATTEMPT
+      await logActivity(userEmail, 'LOGIN_FAILED', 'SSO Denied: Email not registered in DB', req.ip);
+
       // Reject login: Do NOT create a new user document
       return res.status(403).json({
         success: false,
@@ -62,11 +66,15 @@ const googleLogin = async (req, res) => {
       });
     }
 
+    // LOG SUCCESSFUL SSO
+    await logActivity(user.email, 'SSO_LOGIN', 'User successfully logged in via Google SSO', req.ip, user._id);
+
     // 3. SUCCESS: User exists. Generate your portal's JWT token and log them in
     sendTokenResponse(user, 200, res); 
 
   } catch (error) {
     console.error("Google SSO Error:", error);
+    await logActivity('Unknown', 'LOGIN_FAILED', 'Invalid Google Token provided or verification failed', req.ip);
     res.status(401).json({ success: false, message: "Invalid Google Token or SSO failed." });
   }
 };
@@ -85,15 +93,18 @@ const login = async (req, res) => {
         // Check for user
         const user = await User.findOne({ email }).select("+password");
         if (!user) {
+            await logActivity(email, 'LOGIN_FAILED', 'Attempted manual login with unregistered email', req.ip);
             return res.status(401).json({ success: false, message: "Invalid credentials" });
         }
 
         // Check if password matches
         const isMatch = await user.matchPassword(password);
         if (!isMatch) {
+            await logActivity(email, 'LOGIN_FAILED', 'Incorrect password provided', req.ip, user._id);
             return res.status(401).json({ success: false, message: "Invalid credentials" });
         }
 
+        await logActivity(email, 'LOGIN_SUCCESS', 'User successfully logged in manually', req.ip, user._id);
         sendTokenResponse(user, 200, res);
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
@@ -148,6 +159,7 @@ const forgotPassword = async (req, res) => {
                 message,
             });
 
+            await logActivity(user.email, 'PASSWORD_RESET', 'Password reset email requested and sent', req.ip, user._id);
             res.status(200).json({ success: true, data: "Email sent" });
         } catch (err) {
             console.error(err);
@@ -186,6 +198,7 @@ const resetPassword = async (req, res) => {
 
         await user.save();
 
+        await logActivity(user.email, 'PASSWORD_RESET', 'Password successfully reset via email token', req.ip, user._id);
         sendTokenResponse(user, 200, res);
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
@@ -211,6 +224,7 @@ const updatePassword = async (req, res) => {
         
         await user.save();
 
+        await logActivity(user.email, 'PASSWORD_RESET', 'Password updated successfully from internal dashboard', req.ip, user._id);
         sendTokenResponse(user, 200, res);
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
