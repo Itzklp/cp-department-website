@@ -150,14 +150,14 @@ const forgotPassword = async (req, res) => {
         const clientUrl = process.env.CLIENT_URL || "http://172.24.16.207";
         const resetUrl = `${clientUrl}/reset-password/${resetToken}`;
 
-        const message = `You are receiving this email because a password reset was requested for your account.\n\nPlease click the link below to reset your password:\n\n${resetUrl}\n\nIf you did not request this, please ignore this email.`;
+  const message = `You are receiving this email because you (or someone else) has requested the reset of a password. \n\n Please Click on: \n ${resetUrl}`;
 
-        try {
-            await sendEmail({
-                email: user.email,
-                subject: "CISIS Portal - Password Reset",
-                message,
-            });
+  try {
+    await sendEmail({
+      email: user.email,
+      subject: "Password Reset Token",
+      message,
+    });
 
             await logActivity(user.email, 'PASSWORD_RESET', 'Password reset email requested and sent', req.ip, user._id);
             res.status(200).json({ success: true, data: "Email sent" });

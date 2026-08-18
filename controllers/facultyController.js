@@ -1,22 +1,83 @@
 const colors = require("colors");
 const facultyModels = require("../models/facultyModels");
 const XLSX = require("xlsx");
+const fs = require("fs");
 const sendEmail = require("../utils/sendEmail");
 const User = require("../models/userModel");
 const logActivity = require("../utils/logger");
+
+// ---- Helpers for bulk upload parsing ----
+const cellStr = (val) => (val === undefined || val === null) ? "" : String(val).trim();
+
+// Excel headers can carry \n/\r\n or extra spaces mid-word - strip ALL
+// whitespace before matching so line-wrapped headers match reliably.
+const normalizeKey = (k) => k.replace(/\s+/g, "").trim().toLowerCase();
+const buildLookup = (row) => {
+  const map = {};
+  for (const key of Object.keys(row)) map[normalizeKey(key)] = row[key];
+  return map;
+};
+const pick = (lookup, keys) => {
+  for (const k of keys) {
+    const v = lookup[normalizeKey(k)];
+    if (v !== undefined && v !== null && cellStr(v) !== "") return v;
+  }
+  return undefined;
+};
+
+// Handles real Date objects, ISO strings, "D.M.YYYY" and "D-M-YYYY".
+const parseFlexibleDate = (val) => {
+  if (val === undefined || val === null || cellStr(val) === "") return null;
+  if (val instanceof Date) return isNaN(val.getTime()) ? null : val;
+
+  const str = String(val).trim();
+  const sepMatch = str.match(/^(\d{1,2})[.\-](\d{1,2})[.\-](\d{4})$/);
+  if (sepMatch) {
+    const [, day, month, year] = sepMatch;
+    const d = new Date(Number(year), Number(month) - 1, Number(day));
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  const d = new Date(str);
+  return isNaN(d.getTime()) ? null : d;
+};
+
+// Splits a bullet/newline/comma/semicolon separated cell into a clean array.
+// Handles "• A\r\n• B" style lists as well as plain "A, B" lists.
+// Treats stray "0" (a common Excel artifact for an otherwise-empty cell) as empty.
+const parseListValue = (val) => {
+  if (val === undefined || val === null) return [];
+  return String(val)
+    .split(/\r?\n|,|;/)
+    .map((s) => s.replace(/^[\s•\-*]+/, "").trim())
+    .filter((s) => s.length > 0 && s !== "0" && s.toLowerCase() !== "none");
+};
+
+const isValidEmail = (s) => /\S+@\S+\.\S+/.test(s);
 
 // Add Faculty
 const addFaculty = async (req, res) => {
   try {
     const { 
+      psrn,
       firstName, 
       lastName, 
       email, 
+      instituteEmail,
       department, 
       researchArea, 
       teaches, 
       joiningDate,
       designation,
+      mobileNo,
+      chamberNo,
+      intercomNo,
+      promotedASTPDate,
+      promotedASOPDate,
+      promotedProfessorDate,
+      promotedSrProfessorDate,
+      phdScholarsSupervised,
+      phdDacMembership,
       password
     } = req.body;
 
@@ -35,8 +96,11 @@ const addFaculty = async (req, res) => {
     }
 
     const faculty = await facultyModels.create({
-      firstName, lastName, email, department, designation,
-      researchArea, teaches, joiningDate
+      psrn, firstName, lastName, email, instituteEmail, department, designation,
+      researchArea, teaches, joiningDate,
+      mobileNo, chamberNo, intercomNo,
+      promotedASTPDate, promotedASOPDate, promotedProfessorDate, promotedSrProfessorDate,
+      phdScholarsSupervised, phdDacMembership
     });
 
     // 2. AUTOMATIC USER CREATION (New Logic)
@@ -282,43 +346,100 @@ const bulkUploadFaculty = async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, message: "No file uploaded" });
 
-    // Read Excel file from buffer
-    const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+    // cellDates: true so date columns come through as real JS Dates.
+    const workbook = XLSX.readFile(req.file.path, { cellDates: true });
     const sheetName = workbook.SheetNames[0];
     const sheet = workbook.Sheets[sheetName];
-
-    // Convert sheet to JSON
     const data = XLSX.utils.sheet_to_json(sheet, { defval: "" });
 
     if (!data || data.length === 0) {
+      fs.unlinkSync(req.file.path);
       return res.status(400).json({ success: false, message: "Excel sheet is empty" });
     }
 
-    // Transform each row
-    const formattedData = data.map(row => ({
-      firstName: row.firstName || row.FirstName || "",
-      lastName: row.lastName || row.LastName || "",
-      email: row.email || row.Email || "",
-      department: row.department || row.Department || "",
-      designation: row.designation || "Prof.",
-      researchArea: row.researchArea ? row.researchArea.split(",").map(a => a.trim()) : [],
-      teaches: row.teaches ? row.teaches.split(",").map(a => a.trim()) : [],
-      joiningDate: row.joiningDate ? new Date(row.joiningDate) : Date.now(),
-    }));
+    const inserted = [];
+    const skipped = [];
 
-    // Validate required fields and remove invalid rows
-    const validData = formattedData.filter(f => f.firstName && f.lastName && f.email && f.department);
+    for (const row of data) {
+      const lookup = buildLookup(row);
 
-    if (validData.length === 0) {
-      return res.status(400).json({ success: false, message: "No valid rows to insert" });
+      const psrn = cellStr(pick(lookup, ["PSRN"]));
+      const fullName = cellStr(pick(lookup, ["Name of the Faculty", "Name", "firstName"]));
+      const designation = cellStr(pick(lookup, ["Current Designation", "designation"])) || "Prof.";
+      const department = cellStr(pick(lookup, ["Department", "department"])) || "Computer Science";
+
+      // The sheet has two "Email ID" columns (SheetJS disambiguates the
+      // second as "Email ID_1"); prefer whichever looks like a real email
+      // as the primary login address.
+      const emailRaw1 = cellStr(pick(lookup, ["Email ID"])).replace(/,$/, "");
+      const emailRaw2 = cellStr(pick(lookup, ["Email ID_1", "Email"])).replace(/,$/, "");
+      let email = "", instituteEmail = "";
+      if (isValidEmail(emailRaw1)) { email = emailRaw1; instituteEmail = emailRaw2; }
+      else if (isValidEmail(emailRaw2)) { email = emailRaw2; instituteEmail = emailRaw1; }
+      else { email = emailRaw1 || emailRaw2; instituteEmail = emailRaw1 && emailRaw2 ? emailRaw2 : ""; }
+
+      const mobileNo = cellStr(pick(lookup, ["Mobile No.", "Mobile No", "Mobile"]));
+      const chamberNo = cellStr(pick(lookup, ["Chamber No."]));
+      const intercomNo = cellStr(pick(lookup, ["Intercom No."]));
+      const researchArea = parseListValue(pick(lookup, ["Research Area"]));
+      const teaches = parseListValue(pick(lookup, ["Teaches"]));
+
+      const joiningDate = parseFlexibleDate(pick(lookup, ["DOJ", "Joining Date"])) || Date.now();
+      const promotedASTPDate = parseFlexibleDate(pick(lookup, ["Promoted as ASTP w.e.f."]));
+      const promotedASOPDate = parseFlexibleDate(pick(lookup, ["Promoted as ASOP w.e.f."]));
+      const promotedProfessorDate = parseFlexibleDate(pick(lookup, ["Promoted as Professor w.e.f"]));
+      const promotedSrProfessorDate = parseFlexibleDate(pick(lookup, ["Promoted as Sr. Professor w.e.f"]));
+
+      const phdScholarsSupervised = parseListValue(
+        pick(lookup, ["Name of Ph.D. Scholars Under Supervision"])
+      );
+      const phdDacMembership = parseListValue(
+        pick(lookup, ["Name of PhD Students Under DAC Membership"])
+      );
+
+      if (!fullName || !email || !department) {
+        skipped.push({
+          row: fullName || "(unnamed)",
+          reason: "Missing required field (Name, Email, or Department)",
+        });
+        continue;
+      }
+
+      // Split "Firstname Lastname" - everything but the last word is the
+      // first name, the last word is the last name. Multi-word surnames
+      // and middle names aren't perfectly handled by this heuristic; fix
+      // manually via the edit form if needed.
+      const nameParts = fullName.split(/\s+/);
+      const lastName = nameParts.length > 1 ? nameParts.pop() : nameParts[0];
+      const firstName = nameParts.length > 0 ? nameParts.join(" ") : fullName;
+
+      const existingFaculty = await facultyModels.findOne({ email });
+      if (existingFaculty) {
+        skipped.push({ row: fullName, reason: `Faculty with email "${email}" already exists` });
+        continue;
+      }
+
+      try {
+        const faculty = await facultyModels.create({
+          psrn, firstName, lastName, email, instituteEmail, department, designation,
+          researchArea, teaches, joiningDate,
+          mobileNo, chamberNo, intercomNo,
+          promotedASTPDate, promotedASOPDate, promotedProfessorDate, promotedSrProfessorDate,
+          phdScholarsSupervised, phdDacMembership,
+        });
+        inserted.push(faculty);
+      } catch (err) {
+        skipped.push({ row: fullName, reason: err.message });
+      }
     }
 
-    // Insert into DB
-    const result = await Faculty.insertMany(validData, { ordered: false }); // continue on duplicate errors
+    fs.unlinkSync(req.file.path);
 
     res.status(201).json({
       success: true,
-      message: `Successfully imported ${result.length} faculty records`,
+      message: `${inserted.length} faculty records imported successfully${skipped.length ? `, ${skipped.length} skipped` : ""}`,
+      faculties: inserted,
+      skipped,
     });
   } catch (err) {
     console.error(err);

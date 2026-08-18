@@ -1,6 +1,11 @@
 const mongoose = require("mongoose");
 
 const projectSchema = new mongoose.Schema({
+  psrn: {
+    // "PSRN" - project reference number
+    type: String,
+    trim: true,
+  },
   projectPI: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "Faculty", // reference Faculty model
@@ -20,15 +25,27 @@ const projectSchema = new mongoose.Schema({
     trim: true,
   },
   fundingAgency: {
+    // "Agency"
     type: String,
     required: true,
     trim: true,
   },
+  scheme: {
+    // "Scheme"
+    type: String,
+    trim: true,
+  },
   dateSanctioned: {
+    // "Sanctioned Date"
     type: Date,
     required: true,
   },
+  projectStartDate: {
+    // "Project Start Date"
+    type: Date,
+  },
   dateCompletion: {
+    // "Project End Date"
     type: Date,
     required: true,
   },
@@ -46,17 +63,20 @@ const projectSchema = new mongoose.Schema({
     trim: true,
   },
   totalINR: {
+    // "Amount Sanctioned (Rs)"
     type: Number,
     required: true,
   },
   type: {
+    // "Type of Project (Consultancy/Sponsored)"
     type: String,
-    enum: ["National", "International"],
+    enum: ["Consultancy", "Sponsored"],
     required: true,
   },
   category: {
+    // "Type of Project (Govt/Industry/International)"
     type: String,
-    enum: ["Government", "Industry"],
+    enum: ["Govt", "Industry", "International"],
     required: true,
   },
 });
